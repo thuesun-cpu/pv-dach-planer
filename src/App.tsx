@@ -2,14 +2,26 @@ import React, { useRef, useState } from "react";
 
 type Pt = { x: number; y: number };
 
-function distance(a: Pt, b: Pt) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.hypot(dx, dy);
-}
+type RoofCover =
+  | { kind: "tile"; variant: "einfalz" | "doppelfalz_beton" | "tonstein" | "jumbo" }
+  | { kind: "sheet"; variant: "bitumen" | "wellblech" | "trapezblech" };
 
-// Shoelace-Formel (liefert Fläche in Pixel^2)
+const TILE_SPECS_CM: Record<
+  NonNullable<Extract<RoofCover, { kind: "tile" }>["variant"]>,
+  { w_cm: number; h_cm: number; label: string }
+> = {
+  einfalz: { w_cm: 21.5, h_cm: 33, label: "Einfalzziegel 21,5×33 cm" },
+  doppelfalz_beton: { w_cm: 30, h_cm: 33, label: "Doppelfalzziegel / Beton 30×33 cm" },
+  tonstein: { w_cm: 30, h_cm: 33, label: "Tonstein 30×33 cm" },
+  jumbo: { w_cm: 34, h_cm: 36, label: "Jumboziegel 34×36 cm" },
+};
+
+// --- Geometrie-Utils ---
+function distance(a: Pt, b: Pt) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
 function polygonAreaPx2(pts: Pt[]) {
+  if (pts.length < 3) return 0;
   let s = 0;
   for (let i = 0; i < pts.length; i++) {
     const p = pts[i];
@@ -19,6 +31,7 @@ function polygonAreaPx2(pts: Pt[]) {
   return Math.abs(s) / 2;
 }
 
+// --- Komponente ---
 export default function PVDachPlaner() {
   const [image, setImage] = useState<string | null>(null);
 
@@ -27,88 +40,266 @@ export default function PVDachPlaner() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [closed, setClosed] = useState(false);
 
-  // Kalibrierung
-  const [calibPts, setCalibPts] = useState<Pt[]>([]);
+  // Dachhaut & Kalibrierung
+  const [cover, setCover] = useState<RoofCover>({ kind: "tile", variant: "einfalz" });
+
+  // Ziegel-Referenz: Anzahl entlang Kanten (Integer)
+  const [countOrtgang, setCountOrtgang] = useState<string>(""); // # Ziegel über Ortgang
+  const [countTraufe, setCountTraufe] = useState<string>("");   // # Ziegel über Traufe
+
+  // Blech/Bitumen-Referenz: reale Längen in m
+  const [lenOrtgangM, setLenOrtgangM] = useState<string>("");
+  const [lenTraufeM, setLenTraufeM] = useState<string>("");
+
+  // Referenz-Segmente auf dem Bild (je 2 Klicks)
+  const [segOrtgang, setSegOrtgang] = useState<Pt[]>([]);
+  const [segTraufe, setSegTraufe] = useState<Pt[]>([]);
+
+  // finaler Maßstab (m/px) – wird aus beiden Richtungen gemittelt, wenn vorhanden
   const [metersPerPixel, setMetersPerPixel] = useState<number | null>(null);
-  const [calibLengthInput, setCalibLengthInput] = useState<string>(""); // in m
-  const [calibMode, setCalibMode] = useState(false);
+
+  // Modus für „welches Segment wird gerade gesetzt?“
+  const [setMode, setSetMode] = useState<"none" | "segOrtgang" | "segTraufe" | "polygon">("polygon");
 
   const imgRef = useRef<HTMLImageElement | null>(null);
 
-  const getPos = (e: React.MouseEvent) => {
-    const rect = imgRef.current?.getBoundingClientRect();
-    if (!rect) return { x: 0, y: 0 };
-    const x = Math.min(Math.max(e.clientX - rect.left, 0), rect.width);
-    const y = Math.min(Math.max(e.clientY - rect.top, 0), rect.height);
-    return { x, y };
+  // Mausposition relativ zum Bild
+  const relPos = (e: React.MouseEvent) => {
+    const r = imgRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    return {
+      x: Math.min(Math.max(e.clientX - r.left, 0), r.width),
+      y: Math.min(Math.max(e.clientY - r.top, 0), r.height),
+    };
   };
 
-  // Klick ins Bild
-  const handleImageClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    if (!imgRef.current) return;
-    const pos = getPos(e);
+  // --- Click-Handling ---
+  const onImgClick = (e: React.MouseEvent) => {
+    const p = relPos(e);
 
-    if (calibMode) {
-      // Kalibrierpunkte setzen (max 2)
-      setCalibPts((prev) => {
-        const next = [...prev, pos].slice(-2);
-        return next;
-      });
+    if (setMode === "segOrtgang") {
+      setSegOrtgang((prev) => (prev.length >= 2 ? [p] : [...prev, p]));
       return;
     }
-
-    // Polygon-Punkte setzen
-    if (closed) return; // geschlossen: keine neuen Punkte
-    setPoints((prev) => [...prev, pos]);
+    if (setMode === "segTraufe") {
+      setSegTraufe((prev) => (prev.length >= 2 ? [p] : [...prev, p]));
+      return;
+    }
+    if (setMode === "polygon" && !closed) {
+      setPoints((prev) => [...prev, p]);
+    }
   };
 
-  // Dragging
-  const startDrag = (idx: number) => (e: React.MouseEvent) => {
+  // Dragging von Polygonpunkten
+  const startDrag = (i: number) => (e: React.MouseEvent) => {
     e.preventDefault();
-    setDragIndex(idx);
+    setDragIndex(i);
   };
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const onMove = (e: React.MouseEvent) => {
     if (dragIndex === null) return;
-    const { x, y } = getPos(e);
+    const p = relPos(e);
     setPoints((prev) => {
       const cp = [...prev];
-      cp[dragIndex] = { x, y };
+      cp[dragIndex] = p;
       return cp;
     });
   };
   const endDrag = () => setDragIndex(null);
 
-  // Kalibrierung anwenden: m/px berechnen
-  const applyCalibration = () => {
-    if (calibPts.length !== 2) return;
-    const px = distance(calibPts[0], calibPts[1]);
-    const meters = parseFloat(calibLengthInput.replace(",", "."));
-    if (!isFinite(meters) || meters <= 0 || px <= 0) return;
-    setMetersPerPixel(meters / px);
-    setCalibMode(false);
+  // Maßstab berechnen
+  const recomputeScale = () => {
+    let mpp: number[] = [];
+
+    if (segOrtgang.length === 2) {
+      const px = distance(segOrtgang[0], segOrtgang[1]);
+      if (cover.kind === "tile") {
+        const spec = TILE_SPECS_CM[cover.variant];
+        const count = parseFloat(countOrtgang.replace(",", "."));
+        if (px > 0 && isFinite(count) && count > 0) {
+          const meters = (count * spec.w_cm) / 100; // Breite pro Ziegel
+          mpp.push(meters / px);
+        }
+      } else {
+        const meters = parseFloat(lenOrtgangM.replace(",", "."));
+        if (px > 0 && isFinite(meters) && meters > 0) {
+          mpp.push(meters / px);
+        }
+      }
+    }
+
+    if (segTraufe.length === 2) {
+      const px = distance(segTraufe[0], segTraufe[1]);
+      if (cover.kind === "tile") {
+        const spec = TILE_SPECS_CM[cover.variant];
+        const count = parseFloat(countTraufe.replace(",", "."));
+        if (px > 0 && isFinite(count) && count > 0) {
+          const meters = (count * spec.h_cm) / 100; // Sichtmaß Höhe
+          mpp.push(meters / px);
+        }
+      } else {
+        const meters = parseFloat(lenTraufeM.replace(",", "."));
+        if (px > 0 && isFinite(meters) && meters > 0) {
+          mpp.push(meters / px);
+        }
+      }
+    }
+
+    if (mpp.length === 0) {
+      setMetersPerPixel(null);
+    } else if (mpp.length === 1) {
+      setMetersPerPixel(mpp[0]);
+    } else {
+      // Mittelwert beider Richtungen
+      setMetersPerPixel((mpp[0] + mpp[1]) / 2);
+    }
   };
 
-  // Fläche in m² (falls geschlossen + kalibriert)
+  // Fläche (m²), wenn geschlossen + Maßstab vorhanden
   const areaM2 =
     closed && points.length >= 3 && metersPerPixel
       ? polygonAreaPx2(points) * metersPerPixel * metersPerPixel
       : null;
 
-  const resetPolygon = () => {
+  // Reset-Helfer
+  const resetAll = () => {
     setPoints([]);
-    setClosed(false);
     setDragIndex(null);
+    setClosed(false);
+    setSegOrtgang([]);
+    setSegTraufe([]);
+    setMetersPerPixel(null);
   };
 
-  const resetCalibration = () => {
-    setCalibPts([]);
-    setMetersPerPixel(null);
-    setCalibLengthInput("");
-  };
+  // UI-Helfer
+  const CoverControls = () => (
+    <div style={{ display: "grid", gap: 8 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <label>
+          Dachhaut:&nbsp;
+          <select
+            value={`${cover.kind}:${(cover as any).variant}`}
+            onChange={(e) => {
+              const [k, v] = e.target.value.split(":");
+              if (k === "tile") setCover({ kind: "tile", variant: v as any });
+              else setCover({ kind: "sheet", variant: v as any });
+              // Referenzen zurücksetzen bei Wechsel
+              setSegOrtgang([]);
+              setSegTraufe([]);
+              setCountOrtgang("");
+              setCountTraufe("");
+              setLenOrtgangM("");
+              setLenTraufeM("");
+              setMetersPerPixel(null);
+            }}
+          >
+            {/* Ziegelarten */}
+            <option value="tile:einfalz">{TILE_SPECS_CM.einfalz.label}</option>
+            <option value="tile:doppelfalz_beton">{TILE_SPECS_CM.doppelfalz_beton.label}</option>
+            <option value="tile:tonstein">{TILE_SPECS_CM.tonstein.label}</option>
+            <option value="tile:jumbo">{TILE_SPECS_CM.jumbo.label}</option>
+            {/* Blech/Bitumen */}
+            <option value="sheet:bitumen">Bitumendach</option>
+            <option value="sheet:wellblech">Wellblech (≥ 0,7 mm)</option>
+            <option value="sheet:trapezblech">Trapezblech (≥ 0,7 mm)</option>
+          </select>
+        </label>
+      </div>
+
+      {cover.kind === "tile" ? (
+        <>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label>
+              Ziegel **Ortgang** (Anzahl):&nbsp;
+              <input
+                type="number"
+                min={1}
+                value={countOrtgang}
+                onChange={(e) => setCountOrtgang(e.target.value)}
+                style={{ width: 100 }}
+              />
+            </label>
+            <button onClick={() => setSetMode("segOrtgang")}>
+              Segment Ortgang im Bild setzen (2 Klicks)
+            </button>
+            <span>
+              {segOrtgang.length}/2 Punkte {segOrtgang.length === 2 && "✅"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label>
+              Ziegel **Traufe** (Anzahl):&nbsp;
+              <input
+                type="number"
+                min={1}
+                value={countTraufe}
+                onChange={(e) => setCountTraufe(e.target.value)}
+                style={{ width: 100 }}
+              />
+            </label>
+            <button onClick={() => setSetMode("segTraufe")}>
+              Segment Traufe im Bild setzen (2 Klicks)
+            </button>
+            <span>
+              {segTraufe.length}/2 Punkte {segTraufe.length === 2 && "✅"}
+            </span>
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label>
+              Länge **Ortgang** (m):&nbsp;
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={lenOrtgangM}
+                onChange={(e) => setLenOrtgangM(e.target.value)}
+                style={{ width: 120 }}
+              />
+            </label>
+            <button onClick={() => setSetMode("segOrtgang")}>
+              Segment Ortgang im Bild setzen (2 Klicks)
+            </button>
+            <span>
+              {segOrtgang.length}/2 Punkte {segOrtgang.length === 2 && "✅"}
+            </span>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label>
+              Länge **Traufe** (m):&nbsp;
+              <input
+                type="number"
+                step="0.01"
+                min={0}
+                value={lenTraufeM}
+                onChange={(e) => setLenTraufeM(e.target.value)}
+                style={{ width: 120 }}
+              />
+            </label>
+            <button onClick={() => setSetMode("segTraufe")}>
+              Segment Traufe im Bild setzen (2 Klicks)
+            </button>
+            <span>
+              {segTraufe.length}/2 Punkte {segTraufe.length === 2 && "✅"}
+            </span>
+          </div>
+        </>
+      )}
+
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={recomputeScale}>Maßstab berechnen</button>
+        <button onClick={() => setSetMode("polygon")}>Polygon setzen</button>
+        <button onClick={() => { setSegOrtgang([]); setSegTraufe([]); setMetersPerPixel(null); }}>
+          Referenz-Segmente löschen
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div>
-      {/* Bild-Upload */}
+      {/* Upload */}
       <input
         type="file"
         accept="image/*"
@@ -118,74 +309,47 @@ export default function PVDachPlaner() {
           const reader = new FileReader();
           reader.onload = () => {
             setImage(reader.result as string);
-            // bei neuem Bild alles zurücksetzen
-            resetPolygon();
-            resetCalibration();
+            resetAll();
           };
           reader.readAsDataURL(file);
         }}
       />
 
-      {/* Tools */}
-      <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}>
-        <button onClick={() => setCalibMode((v) => !v)}>
-          {calibMode ? "Kalibriermodus: AN (klicke 2 Punkte)" : "Kalibriermodus starten"}
-        </button>
-        <button onClick={resetCalibration} disabled={!metersPerPixel && calibPts.length === 0}>
-          Kalibrierung löschen
-        </button>
-        <button onClick={() => setClosed((c) => !c)} disabled={points.length < 3}>
-          {closed ? "Polygon öffnen" : "Polygon schließen"}
-        </button>
-        <button onClick={resetPolygon} disabled={points.length === 0}>
-          Fläche zurücksetzen
-        </button>
-        <button
-          onClick={() => setPoints((prev) => prev.slice(0, -1))}
-          disabled={points.length === 0 || closed}
-        >
-          Letzten Punkt löschen
-        </button>
-      </div>
+      {/* Controls */}
+      <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
+        <CoverControls />
 
-      {/* Kalibrier-Länge eingeben */}
-      {calibMode && calibPts.length === 2 && (
-        <div style={{ marginTop: 8 }}>
-          <label>
-            Reale Länge zwischen den zwei Punkten (m):{" "}
-            <input
-              type="number"
-              step="0.01"
-              style={{ width: 120 }}
-              value={calibLengthInput}
-              onChange={(e) => setCalibLengthInput(e.target.value)}
-            />
-          </label>
-          <button style={{ marginLeft: 8 }} onClick={applyCalibration} disabled={!calibLengthInput}>
-            Maßstab übernehmen
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => setClosed((c) => !c)} disabled={points.length < 3}>
+            {closed ? "Polygon öffnen" : "Polygon schließen"}
+          </button>
+          <button onClick={() => setPoints((p) => p.slice(0, -1))} disabled={points.length === 0 || closed}>
+            Letzten Punkt löschen
+          </button>
+          <button onClick={resetAll} disabled={!points.length && !segOrtgang.length && !segTraufe.length}>
+            Alles zurücksetzen
           </button>
         </div>
-      )}
 
-      {/* Statusanzeige */}
-      <div style={{ marginTop: 8 }}>
-        {metersPerPixel ? (
-          <span>
-            Maßstab: {metersPerPixel.toFixed(5)} m/px
-            {areaM2 !== null && (
-              <> • Fläche: <b>{areaM2.toFixed(2)} m²</b></>
-            )}
-          </span>
-        ) : (
-          <span>Kein Maßstab gesetzt – bitte kalibrieren.</span>
-        )}
+        <div>
+          {metersPerPixel ? (
+            <b>
+              Maßstab: {metersPerPixel.toFixed(5)} m/px
+              {closed && points.length >= 3 && (
+                <> • Fläche: { (polygonAreaPx2(points)*metersPerPixel*metersPerPixel).toFixed(2) } m²</>
+              )}
+            </b>
+          ) : (
+            <span>Maßstab noch nicht gesetzt – Referenz(en) setzen & „Maßstab berechnen“ klicken.</span>
+          )}
+        </div>
       </div>
 
       {/* Bild + Overlay */}
       {image && (
         <div
-          style={{ marginTop: 16, position: "relative", display: "inline-block" }}
-          onMouseMove={handleMouseMove}
+          style={{ marginTop: 12, position: "relative", display: "inline-block" }}
+          onMouseMove={onMove}
           onMouseUp={endDrag}
           onMouseLeave={endDrag}
         >
@@ -193,44 +357,52 @@ export default function PVDachPlaner() {
             ref={imgRef}
             src={image}
             alt="Dach"
-            style={{ maxWidth: "100%", display: "block", cursor: calibMode ? "crosshair" : "crosshair" }}
-            onClick={handleImageClick}
+            style={{ maxWidth: "100%", display: "block", cursor: "crosshair" }}
+            onClick={onImgClick}
           />
 
-          <svg
-            style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}
-          >
-            {/* Kalibrier-Linie */}
-            {calibPts.length >= 1 &&
-              calibPts.map((p, i) => (
-                <circle key={`k-${i}`} cx={p.x} cy={p.y} r={5} fill="#00b" />
-              ))}
-            {calibPts.length === 2 && (
-              <>
-                <line
-                  x1={calibPts[0].x}
-                  y1={calibPts[0].y}
-                  x2={calibPts[1].x}
-                  y2={calibPts[1].y}
-                  stroke="#00b"
-                  strokeDasharray="6 4"
-                  strokeWidth={2}
-                />
-                <text
-                  x={(calibPts[0].x + calibPts[1].x) / 2}
-                  y={(calibPts[0].y + calibPts[1].y) / 2 - 8}
-                  fontSize={12}
-                  textAnchor="middle"
-                  fill="#00b"
-                >
-                  {metersPerPixel
-                    ? `${(distance(calibPts[0], calibPts[1]) * metersPerPixel).toFixed(2)} m`
-                    : `${Math.round(distance(calibPts[0], calibPts[1]))} px`}
-                </text>
-              </>
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%" }}>
+            {/* Referenz-Segmente */}
+            {segOrtgang.map((p, i) => (
+              <circle key={`o-${i}`} cx={p.x} cy={p.y} r={5} fill="#0070f3" />
+            ))}
+            {segOrtgang.length === 2 && (
+              <line
+                x1={segOrtgang[0].x}
+                y1={segOrtgang[0].y}
+                x2={segOrtgang[1].x}
+                y2={segOrtgang[1].y}
+                stroke="#0070f3"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+              />
             )}
 
-            {/* Gefüllte Fläche wenn geschlossen */}
+            {segTraufe.map((p, i) => (
+              <circle key={`t-${i}`} cx={p.x} cy={p.y} r={5} fill="#00b894" />
+            ))}
+            {segTraufe.length === 2 && (
+              <line
+                x1={segTraufe[0].x}
+                y1={segTraufe[0].y}
+                x2={segTraufe[1].x}
+                y2={segTraufe[1].y}
+                stroke="#00b894"
+                strokeWidth={2}
+                strokeDasharray="6 4"
+              />
+            )}
+
+            {/* Polygon (offen) */}
+            {!closed &&
+              points.map((p, i) => {
+                const n = points[i + 1];
+                return n ? (
+                  <line key={`l-${i}`} x1={p.x} y1={p.y} x2={n.x} y2={n.y} stroke="red" strokeWidth={2} />
+                ) : null;
+              })}
+
+            {/* Gefülltes Polygon */}
             {closed && points.length >= 3 && (
               <polygon
                 points={points.map((p) => `${p.x},${p.y}`).join(" ")}
@@ -240,16 +412,7 @@ export default function PVDachPlaner() {
               />
             )}
 
-            {/* Linien (offenes Polygon) */}
-            {!closed &&
-              points.map((p, i) => {
-                const next = points[i + 1];
-                return next ? (
-                  <line key={`l-${i}`} x1={p.x} y1={p.y} x2={next.x} y2={next.y} stroke="red" strokeWidth={2} />
-                ) : null;
-              })}
-
-            {/* Punkte (drag-fähig) */}
+            {/* Punkte (ziehbar) */}
             {points.map((p, i) => (
               <circle
                 key={`p-${i}`}
