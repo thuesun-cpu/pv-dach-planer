@@ -5,14 +5,14 @@ type Pt = { x: number; y: number };          // Bildkoordinaten (px)
 type ModuleUV = { id: string; u0: number; v0: number; u1: number; v1: number; removed?: boolean };
 
 type RoofCover =
-  | { kind: "tile"; variant: "einfalz" | "doppelfalz_beton" | "tonstein" | "jumbo" }
+  | { kind: "tile"; variant: "einfalz" | "doppelfalz_beton" | "betonstein" | "jumbo" }
   | { kind: "sheet"; variant: "bitumen" | "wellblech" | "trapezblech" };
 
 const TILE_SPECS_CM = {
-  einfalz: { w_cm: 21.5, h_cm: 33, label: "Einfalzziegel 21,5×33 cm" },
-  doppelfalz_beton: { w_cm: 30,  h_cm: 33, label: "Doppelfalzziegel / Beton 30×33 cm" },
-  tonstein:         { w_cm: 30,  h_cm: 33, label: "Tonstein 30×33 cm" },
-  jumbo:            { w_cm: 34,  h_cm: 36, label: "Jumboziegel 34×36 cm" },
+  einfalz:           { w_cm: 21.5, h_cm: 33, label: "Einfalzziegel 21,5×33 cm" },
+  doppelfalz_beton:  { w_cm: 30,   h_cm: 33, label: "Doppelfalzziegel 30×33 cm" },
+  betonstein:        { w_cm: 30,   h_cm: 33, label: "Betonstein 30×33 cm" },
+  jumbo:             { w_cm: 34,   h_cm: 36, label: "Jumboziegel 34×36 cm" },
 } as const;
 
 /** ---------- Geometrie / Utils ---------- */
@@ -69,18 +69,17 @@ export default function PVDachPlaner() {
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [closed, setClosed] = useState(false);
 
-  // Dachhaut & Kalibrierung – Counts/Längen bleiben, aber die Pixellängen
-  // holen wir automatisch aus den ersten 3 Polygonpunkten.
+  // Dachhaut & Kalibrierung – Pixellängen für Traufe/Ortgang kommen automatisch aus den 1.–3. Polygonpunkten
   const [cover, setCover] = useState<RoofCover>({ kind: "tile", variant: "einfalz" });
-  const [countOrtgang, setCountOrtgang] = useState<string>("");
-  const [countTraufe,  setCountTraufe]  = useState<string>("");
-  const [lenOrtgangM,  setLenOrtgangM]  = useState<string>("");
-  const [lenTraufeM,   setLenTraufeM]   = useState<string>("");
+  const [countOrtgang, setCountOrtgang] = useState<string>(""); // nur bei tile
+  const [countTraufe,  setCountTraufe]  = useState<string>(""); // nur bei tile
+  const [lenOrtgangM,  setLenOrtgangM]  = useState<string>(""); // nur bei sheet
+  const [lenTraufeM,   setLenTraufeM]   = useState<string>(""); // nur bei sheet
   const [metersPerPixel, setMetersPerPixel] = useState<number | null>(null);
 
-  // Modul-Parameter
-  const [moduleWmm, setModuleWmm] = useState<number>(1176);
-  const [moduleHmm, setModuleHmm] = useState<number>(1134);
+  // Modul-Parameter (Standard: vertikal 1134×1765 mm)
+  const [moduleWmm, setModuleWmm] = useState<number>(1134);
+  const [moduleHmm, setModuleHmm] = useState<number>(1765);
   const [orientation, setOrientation] = useState<"horizontal" | "vertikal">("vertikal");
   const [moduleStyle, setModuleStyle] = useState<"fullblack" | "vertex">("fullblack");
   const [opacity, setOpacity] = useState<number>(0.9);
@@ -107,36 +106,20 @@ export default function PVDachPlaner() {
     };
   };
 
-  /** Klick ins Bild */
+  /** Klicks */
   const onImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (mode !== "polygon" || closed) return;
     const p = relPos(e);
-
-    if (mode === "modules" && frame) {
-      // Toggle einzelnes Modul
-      const polys = modulesUV.map(m => ({ id: m.id, poly: uvRectToPolyPx(m, frame) }));
-      for (let i = polys.length - 1; i >= 0; i--) {
-        if (pointInPolygon(p.x, p.y, polys[i].poly)) {
-          setModulesUV(prev => {
-            const cp = [...prev];
-            const idx = cp.findIndex(mm => mm.id === polys[i].id);
-            if (idx >= 0) cp[idx] = { ...cp[idx], removed: !cp[idx].removed };
-            return cp;
-          });
-          return;
-        }
-      }
-    }
-
-    if (mode === "polygon" && !closed) setPoints(prev => [...prev, p]);
+    setPoints(prev => [...prev, p]);
   };
 
-  /** Polygonpunkte & Frame ziehen */
+  /** Mouse-Move (Drag) */
   const onMouseMoveOverlay = (e: React.MouseEvent) => {
-    if (dragIndex !== null) {
+    if (dragIndex !== null && mode === "polygon") {
       const p = relPos(e);
       setPoints(prev => { const cp = [...prev]; cp[dragIndex] = p; return cp; });
     }
-    if (frame && frameDrag) {
+    if (frame && frameDrag && mode === "frame") {
       if (frameDrag.type === "corner" && frameDrag.idx !== undefined) {
         const p = relPos(e);
         setFrame(prev => {
@@ -159,13 +142,12 @@ export default function PVDachPlaner() {
   /** Maßstab berechnen – nutzt automatisch Traufe/Ortgang aus dem Polygon */
   const recomputeScale = () => {
     const mpps: number[] = [];
-
     const pxTraufe = traufePx();
     const pxOrtgang = ortgangPx();
 
     if (pxOrtgang && pxOrtgang > 0) {
       if (cover.kind === "tile") {
-        const spec = TILE_SPECS_CM[cover.variant];
+        const spec = TILE_SPECS_CM[(cover.variant as keyof typeof TILE_SPECS_CM)];
         const c = parseFloat(countOrtgang.replace(",", "."));
         if (isFinite(c) && c > 0) mpps.push((c * spec.w_cm / 100) / pxOrtgang);
       } else {
@@ -176,7 +158,7 @@ export default function PVDachPlaner() {
 
     if (pxTraufe && pxTraufe > 0) {
       if (cover.kind === "tile") {
-        const spec = TILE_SPECS_CM[cover.variant];
+        const spec = TILE_SPECS_CM[(cover.variant as keyof typeof TILE_SPECS_CM)];
         const c = parseFloat(countTraufe.replace(",", "."));
         if (isFinite(c) && c > 0) mpps.push((c * spec.h_cm / 100) / pxTraufe);
       } else {
@@ -201,7 +183,7 @@ export default function PVDachPlaner() {
       ? polygonAreaPx2(points) * metersPerPixel * metersPerPixel
       : null;
 
-  /** Raster-Rahmen initialisieren (aus Bounding-Box des Polygons, **ohne** extra Innenrand) */
+  /** Raster-Rahmen initialisieren (aus Bounding-Box des Polygons) */
   const initFrameFromPolygon = () => {
     if (!metersPerPixel || points.length < 3) { alert("Bitte zuerst Maßstab setzen und Polygon schließen."); return; }
     if (!closed) { alert("Bitte zuerst das Polygon schließen."); return; }
@@ -255,11 +237,11 @@ export default function PVDachPlaner() {
     const out: ModuleUV[] = [];
     let id = 0;
 
+    // Start ohne künstliche Innenränder; 30cm-Sicherheitsabstand prüft Außenkante
     for (let yM = 0; yM + modH <= leftM + 1e-9; yM += (modH + gap)) {
       for (let xM = 0; xM + modW <= topM + 1e-9; xM += (modW + gap)) {
-
-        const u0 =  xM        / topM, v0 =  yM        / leftM;
-        const u1 = (xM+modW)  / topM, v1 = (yM+modH)  / leftM;
+        const u0 = xM / topM, v0 = yM / leftM;
+        const u1 = (xM + modW) / topM, v1 = (yM + modH) / leftM;
 
         // Modulkontur im Bild (px)
         const poly = [
@@ -291,6 +273,16 @@ export default function PVDachPlaner() {
 
     setModulesUV(out);
     setMode("modules");
+  };
+
+  /** Toggle via Klick direkt auf ein Modul (fix für Pointer-Events) */
+  const onToggleModule = (id: string) => {
+    setModulesUV(prev => {
+      const cp = [...prev];
+      const idx = cp.findIndex(m => m.id === id);
+      if (idx >= 0) cp[idx] = { ...cp[idx], removed: !cp[idx].removed };
+      return cp;
+    });
   };
 
   /** Reset */
@@ -328,14 +320,20 @@ export default function PVDachPlaner() {
               value={cover.kind === "tile" ? `tile:${cover.variant}` : `sheet:${cover.variant}`}
               onChange={(e) => {
                 const [k, v] = e.target.value.split(":");
-                if (k === "tile") setCover({ kind: "tile", variant: v as any });
-                else setCover({ kind: "sheet", variant: v as any });
+                if (k === "tile") {
+                  // Tonstein entfernt; Betonstein vorhanden
+                  const valid = (["einfalz","doppelfalz_beton","betonstein","jumbo"] as const);
+                  const vv = valid.includes(v as any) ? (v as any) : "einfalz";
+                  setCover({ kind: "tile", variant: vv });
+                } else {
+                  setCover({ kind: "sheet", variant: v as any });
+                }
                 setMetersPerPixel(null);
               }}
             >
               <option value="tile:einfalz">{TILE_SPECS_CM.einfalz.label}</option>
               <option value="tile:doppelfalz_beton">{TILE_SPECS_CM.doppelfalz_beton.label}</option>
-              <option value="tile:tonstein">{TILE_SPECS_CM.tonstein.label}</option>
+              <option value="tile:betonstein">{TILE_SPECS_CM.betonstein.label}</option>
               <option value="tile:jumbo">{TILE_SPECS_CM.jumbo.label}</option>
               <option value="sheet:bitumen">Bitumendach</option>
               <option value="sheet:wellblech">Wellblech (≥ 0,7 mm)</option>
@@ -345,46 +343,42 @@ export default function PVDachPlaner() {
 
           <span><b>Modus:</b> {
             mode === "polygon" ? "Polygon setzen (Traufe→Traufe→Ortgang…)" :
-            mode === "frame" ? "Raster-Rahmen bearbeiten" :
-            "Module bearbeiten"
+            mode === "frame"   ? "Raster-Rahmen bearbeiten" :
+                                 "Module bearbeiten"
           }</span>
         </div>
 
-        {/* Referenz-Eingaben (Pixel-Längen kommen automatisch aus dem Polygon) */}
+        {/* Referenzen (Maßstab) */}
         {cover.kind === "tile" ? (
-          <>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <label> Ziegel <b>Ortgang</b> (Anzahl):
-                <input type="number" min={1} value={countOrtgang} onChange={(e)=>setCountOrtgang(e.target.value)} style={{ width: 100, marginLeft: 6 }} />
-              </label>
-              <label> Ziegel <b>Traufe</b> (Anzahl):
-                <input type="number" min={1} value={countTraufe} onChange={(e)=>setCountTraufe(e.target.value)} style={{ width: 100, marginLeft: 6 }} />
-              </label>
-              <button onClick={recomputeScale}>Maßstab berechnen</button>
-              <span style={{ opacity: .7 }}>
-                {points.length>=3
-                  ? "Traufe/Kante1 & Ortgang/Kante2 werden automatisch aus dem Polygon gelesen."
-                  : "Polygon: mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."}
-              </span>
-            </div>
-          </>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label> Ziegel <b>Ortgang</b> (Anzahl):
+              <input type="number" min={1} value={countOrtgang} onChange={(e)=>setCountOrtgang(e.target.value)} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <label> Ziegel <b>Traufe</b> (Anzahl):
+              <input type="number" min={1} value={countTraufe} onChange={(e)=>setCountTraufe(e.target.value)} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <button onClick={recomputeScale}>Maßstab berechnen</button>
+            <span style={{ opacity: .7 }}>
+              {points.length>=3
+                ? "Kante1 (P1→P2)=Traufe, Kante2 (P2→P3)=Ortgang – automatisch erkannt."
+                : "Polygon: mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."}
+            </span>
+          </div>
         ) : (
-          <>
-            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-              <label> Länge <b>Ortgang</b> (m):
-                <input type="number" step="0.01" value={lenOrtgangM} onChange={(e)=>setLenOrtgangM(e.target.value)} style={{ width: 120, marginLeft: 6 }} />
-              </label>
-              <label> Länge <b>Traufe</b> (m):
-                <input type="number" step="0.01" value={lenTraufeM} onChange={(e)=>setLenTraufeM(e.target.value)} style={{ width: 120, marginLeft: 6 }} />
-              </label>
-              <button onClick={recomputeScale}>Maßstab berechnen</button>
-              <span style={{ opacity: .7 }}>
-                {points.length>=3
-                  ? "Traufe/Kante1 & Ortgang/Kante2 werden automatisch aus dem Polygon gelesen."
-                  : "Polygon: mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."}
-              </span>
-            </div>
-          </>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <label> Länge <b>Ortgang</b> (m):
+              <input type="number" step="0.01" value={lenOrtgangM} onChange={(e)=>setLenOrtgangM(e.target.value)} style={{ width: 120, marginLeft: 6 }} />
+            </label>
+            <label> Länge <b>Traufe</b> (m):
+              <input type="number" step="0.01" value={lenTraufeM} onChange={(e)=>setLenTraufeM(e.target.value)} style={{ width: 120, marginLeft: 6 }} />
+            </label>
+            <button onClick={recomputeScale}>Maßstab berechnen</button>
+            <span style={{ opacity: .7 }}>
+              {points.length>=3
+                ? "Kante1 (P1→P2)=Traufe, Kante2 (P2→P3)=Ortgang – automatisch erkannt."
+                : "Polygon: mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."}
+            </span>
+          </div>
         )}
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -449,11 +443,14 @@ export default function PVDachPlaner() {
         >
           <img
             ref={imgRef} src={image} alt="Dach"
-            style={{ maxWidth: "100%", display: "block", cursor: "crosshair" }}
+            style={{ maxWidth: "100%", display: "block", cursor: mode==="modules" ? "default" : "crosshair" }}
             onClick={onImgClick}
           />
 
-          {/* SVG-Overlay */}
+          {/* SVG-Overlay:
+              - Root: pointerEvents: 'none'
+              - Interaktive Elemente (je nach Modus) bekommen 'pointerEvents: auto'
+           */}
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             <defs>
               {/* Full-Black Optik */}
@@ -464,7 +461,7 @@ export default function PVDachPlaner() {
               </pattern>
             </defs>
 
-            {/* Module */}
+            {/* Module – interaktiv NUR im Mode 'modules' */}
             {frame && modulesUV.map(m => {
               if (m.removed) return null;
               const poly = uvRectToPolyPx(m, frame);
@@ -472,16 +469,29 @@ export default function PVDachPlaner() {
 
               if (moduleStyle === "fullblack") {
                 return (
-                  <polygon key={m.id} points={pts} fill="url(#mod-fullblack)"
-                           opacity={opacity} stroke="#111" strokeWidth={0.6} />
+                  <polygon
+                    key={m.id}
+                    points={pts}
+                    fill="url(#mod-fullblack)"
+                    opacity={opacity}
+                    stroke="#111"
+                    strokeWidth={0.6}
+                    style={{ pointerEvents: mode==="modules" ? "auto" : "none", cursor: mode==="modules" ? "pointer" : "default" }}
+                    onMouseDown={() => onToggleModule(m.id)}
+                  />
                 );
               } else {
-                // Vertex: nur Kontur + Diamant
+                // Vertex: Kontur + Diamant
                 const cx = (poly[0].x + poly[2].x) / 2;
                 const cy = (poly[0].y + poly[2].y) / 2;
                 const d = Math.max(6, 0.02 * pxPerM);
                 return (
-                  <g key={m.id} opacity={opacity}>
+                  <g
+                    key={m.id}
+                    opacity={opacity}
+                    style={{ pointerEvents: mode==="modules" ? "auto" : "none", cursor: mode==="modules" ? "pointer" : "default" }}
+                    onMouseDown={() => onToggleModule(m.id)}
+                  >
                     <polygon points={pts} fill="none" stroke="#0e7490" strokeWidth={1.2} />
                     <polygon
                       points={`${cx},${cy-d} ${cx+d},${cy} ${cx},${cy+d} ${cx-d},${cy}`}
@@ -503,15 +513,15 @@ export default function PVDachPlaner() {
                        fill="rgba(255,0,0,0.15)" stroke="red" strokeWidth={2} />
             )}
 
-            {/* Ziehbare Polygon-Punkte */}
+            {/* Ziehbare Polygon-Punkte NUR im Mode 'polygon' */}
             {points.map((p, i) => (
               <circle key={`p-${i}`} cx={p.x} cy={p.y} r={6}
                       fill={i===dragIndex ? "#d00" : "red"}
-                      style={{ cursor: "grab", pointerEvents: "auto" }}
-                      onMouseDown={(e)=>{ e.preventDefault(); setDragIndex(i); }} />
+                      style={{ cursor: mode==="polygon" ? "grab" : "default", pointerEvents: mode==="polygon" ? "auto" : "none" }}
+                      onMouseDown={(e)=>{ if (mode!=="polygon") return; e.preventDefault(); setDragIndex(i); }} />
             ))}
 
-            {/* Rahmen mit ziehbaren Ecken + Move */}
+            {/* Rahmen mit ziehbaren Ecken + Move – NUR im Mode 'frame' */}
             {frame && (
               <>
                 {[0,1,2,3].map(i=>{
@@ -522,14 +532,14 @@ export default function PVDachPlaner() {
                 {frame.map((p, i)=>(
                   <rect key={`fc-${i}`} x={p.x-6} y={p.y-6} width={12} height={12}
                         fill="#ffbf00" stroke="#7c5a00" strokeWidth={1}
-                        style={{ pointerEvents: "auto", cursor: "grab" }}
-                        onMouseDown={(e)=>{ e.preventDefault(); setMode("frame"); setFrameDrag({type:"corner", idx:i}); }} />
+                        style={{ pointerEvents: mode==="frame" ? "auto" : "none", cursor: "grab" }}
+                        onMouseDown={(e)=>{ if (mode!=="frame") return; e.preventDefault(); setFrameDrag({type:"corner", idx:i}); }} />
                 ))}
                 <polygon
                   points={frame.map(p=>`${p.x},${p.y}`).join(" ")}
                   fill="transparent"
-                  style={{ pointerEvents: "auto", cursor: "move" }}
-                  onMouseDown={(e)=>{ e.preventDefault(); setMode("frame"); setFrameDrag({type:"move"}); }}
+                  style={{ pointerEvents: mode==="frame" ? "auto" : "none", cursor: "move" }}
+                  onMouseDown={(e)=>{ if (mode!=="frame") return; e.preventDefault(); setFrameDrag({type:"move"}); }}
                 />
               </>
             )}
