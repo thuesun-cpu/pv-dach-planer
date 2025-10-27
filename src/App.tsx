@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+  import React, { useRef, useState } from "react";
 
 /* ===================== Typen ===================== */
 type Pt = { x: number; y: number };
@@ -83,6 +83,9 @@ export default function PVDachPlaner() {
 
   // Modul-Parameter
   const [moduleWmm, setModuleWmm] = useState<number>(1176);
+  // Sicherheitsabstand (Außenkante) in Zentimetern – Standard 30 cm
+const [edgeMarginCm, setEdgeMarginCm] = useState<number>(30);
+
   const [moduleHmm, setModuleHmm] = useState<number>(1134);
   const [orientation, setOrientation] = useState<"vertikal" | "horizontal">("vertikal");
   const [moduleStyle, setModuleStyle] = useState<"fullblack" | "vertex">("fullblack");
@@ -443,7 +446,15 @@ export default function PVDachPlaner() {
               Transparenz
               <input type="range" min={0.2} max={1} step={0.05}
                      value={opacity} onChange={(e)=>setOpacity(parseFloat(e.target.value))}/>
+            <label> Mindestabstand (cm):
+            <input
+              type="number" step={1} min={0}
+                value={edgeMarginCm}
+                onChange={(e)=>setEdgeMarginCm(parseFloat(e.target.value || "0"))}
+              style={{ width: 70, marginLeft: 6 }}
+              />
             </label>
+
             <button onClick={()=>setMode("frame")} disabled={!frame}>Rahmen bearbeiten</button>
             <button onClick={()=>setMode("modules")} disabled={modulesUV.length===0}>Module bearbeiten</button>
             <button onClick={()=>setModulesUV([])} disabled={modulesUV.length===0}>Module löschen</button>
