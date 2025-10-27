@@ -61,10 +61,12 @@ function sampleModuleEdgePoints(poly: Pt[]): Pt[] {
 export default function PVDachPlaner() {
   const [image, setImage] = useState<string | null>(null);
 
+  // Polygon (Traufe→Traufe→Ortgang…)
   const [points, setPoints] = useState<Pt[]>([]);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [closed, setClosed] = useState(false);
 
+  // Dachhaut & Referenzen
   const [cover, setCover] = useState<RoofCover>({ kind: "tile", variant: "doppelfalz_betonstein" });
   const [countOrtgang, setCountOrtgang] = useState<string>("");
   const [countTraufe,  setCountTraufe]  = useState<string>("");
@@ -72,16 +74,19 @@ export default function PVDachPlaner() {
   const [lenTraufeM,   setLenTraufeM]   = useState<string>("");
   const [metersPerPixel, setMetersPerPixel] = useState<number | null>(null);
 
+  // Modul-Parameter
   const [moduleWmm, setModuleWmm] = useState<number>(1176);
   const [moduleHmm, setModuleHmm] = useState<number>(1134);
   const [orientation, setOrientation] = useState<"horizontal" | "vertikal">("vertikal");
   const [moduleStyle, setModuleStyle] = useState<"fullblack" | "vertex">("fullblack");
   const [opacity, setOpacity] = useState<number>(0.9);
 
+  // Rahmen (TL,TR,BR,BL) + Module
   const [frame, setFrame] = useState<Pt[] | null>(null);
   const [frameDrag, setFrameDrag] = useState<{ type: "move" | "corner"; idx?: number } | null>(null);
-
   const [modulesUV, setModulesUV] = useState<ModuleUV[]>([]);
+
+  // Modus & Maus
   const [mode, setMode] = useState<"polygon" | "frame" | "modules">("polygon");
   const [mousePos, setMousePos] = useState<Pt | null>(null);
 
@@ -128,18 +133,12 @@ export default function PVDachPlaner() {
     const p = relPos(e);
     setMousePos(p);
 
-    if (dragIndex !== null) {
-      setPoints(prev => { const cp = [...prev]; cp[dragIndex] = p; return cp; });
-    }
+    if (dragIndex !== null) setPoints(prev => { const cp = [...prev]; cp[dragIndex] = p; return cp; });
     if (frame && frameDrag) {
       if (frameDrag.type === "corner" && frameDrag.idx !== undefined) {
-        setFrame(prev => {
-          if (!prev) return prev;
-          const cp = [...prev]; cp[frameDrag.idx!] = p; return cp;
-        });
+        setFrame(prev => { if (!prev) return prev; const cp = [...prev]; cp[frameDrag.idx!] = p; return cp; });
       } else if (frameDrag.type === "move") {
-        const dx = (e as any).movementX ?? 0;
-        const dy = (e as any).movementY ?? 0;
+        const dx = (e as any).movementX ?? 0, dy = (e as any).movementY ?? 0;
         setFrame(prev => prev?.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) ?? prev);
       }
     }
@@ -150,7 +149,7 @@ export default function PVDachPlaner() {
   const traufePx = () => (points.length >= 2 ? distance(points[0], points[1]) : null);
   const ortgangPx = () => (points.length >= 3 ? distance(points[1], points[2]) : null);
 
-  /** Maßstab sofort berechnen und zurückgeben (ohne „setState“-Wartezeit) */
+  /** Maßstab (sofort) berechnen */
   const recomputeScaleNow = (): number | null => {
     const mpps: number[] = [];
     const pxTraufe = traufePx();
@@ -181,13 +180,7 @@ export default function PVDachPlaner() {
     return mpps.length === 1 ? mpps[0] : (mpps[0] + mpps[1]) / 2;
   };
 
-  /** Fläche (m²) */
-  const areaM2 =
-    closed && points.length >= 3 && metersPerPixel
-      ? polygonAreaPx2(points) * metersPerPixel * metersPerPixel
-      : null;
-
-  /** ------- Rahmen initialisieren: an Polygon-Ecken anheften ------- */
+  /** ------- Rahmen von Polygon ableiten (synchron, Rückgabe) ------- */
   function orderCornersTLTRBRBL(pts: Pt[]): Pt[] {
     const cx = pts.reduce((s,p)=>s+p.x,0)/pts.length;
     const cy = pts.reduce((s,p)=>s+p.y,0)/pts.length;
@@ -201,27 +194,20 @@ export default function PVDachPlaner() {
     const cyc = (k:number)=>srt[(start+k)%srt.length];
     return [cyc(0),cyc(1),cyc(2),cyc(3)];
   }
-
-  const initFrameFromPolygonWith = (mpp: number | null) => {
-    if (!mpp || points.length < 4) return false;
-    let base = points;
-    if (points.length > 4) {
-      const minX = points.reduce((a,b)=>a.x<b.x?a:b);
-      const maxX = points.reduce((a,b)=>a.x>b.x?a:b);
-      const minY = points.reduce((a,b)=>a.y<b.y?a:b);
-      const maxY = points.reduce((a,b)=>a.y>b.y?a:b);
+  const frameFromPolygonNow = (poly: Pt[]): Pt[] | null => {
+    if (poly.length < 4) return null;
+    let base = poly;
+    if (poly.length > 4) {
+      const minX = poly.reduce((a,b)=>a.x<b.x?a:b);
+      const maxX = poly.reduce((a,b)=>a.x>b.x?a:b);
+      const minY = poly.reduce((a,b)=>a.y<b.y?a:b);
+      const maxY = poly.reduce((a,b)=>a.y>b.y?a:b);
       const uniq: Pt[] = [];
-      [minX,maxX,minY,maxY].forEach(p=>{
-        if (!uniq.some(q=>q.x===p.x && q.y===p.y)) uniq.push(p);
-      });
+      [minX,maxX,minY,maxY].forEach(p=>{ if (!uniq.some(q=>q.x===p.x && q.y===p.y)) uniq.push(p); });
       if (uniq.length===4) base = uniq;
     }
-    if (base.length !== 4) return false;
-    const [TL,TR,BR,BL] = orderCornersTLTRBRBL(base);
-    setFrame([TL,TR,BR,BL]);
-    setMode("frame");
-    setModulesUV([]);
-    return true;
+    if (base.length !== 4) return null;
+    return orderCornersTLTRBRBL(base);
   };
 
   /** Bilinear (nahezu perspektivisch) */
@@ -231,7 +217,6 @@ export default function PVDachPlaner() {
     const y = (1-u)*(1-v)*tl.y + u*(1-v)*tr.y + u*v*br.y + (1-u)*v*bl.y;
     return { x, y };
   };
-
   const uvRectToPolyPx = (m: ModuleUV, fr: Pt[]) => {
     const pTL = mapUVtoPx(m.u0, m.v0, fr);
     const pTR = mapUVtoPx(m.u1, m.v0, fr);
@@ -251,60 +236,56 @@ export default function PVDachPlaner() {
     const samples = sampleModuleEdgePoints(corners);
     for (const s of samples) if (!pointInPolygon(s.x, s.y, poly)) return false;
     const SAFETY = 0.30;
-    for (const s of samples) {
-      if (minDistToEdgesPx(s, poly) * mpp < SAFETY) return false;
-    }
+    for (const s of samples) if (minDistToEdgesPx(s, poly) * mpp < SAFETY) return false;
     return true;
   };
 
   /** Start Offsets (links+oben/First) suchen */
   const findAnchorOffsetsM = (fr:Pt[], poly:Pt[], mpp:number, modW:number, modH:number, stepM=0.005) =>{
-    const topM   = distance(fr[0], fr[1]) * mpp;
-    const leftM  = distance(fr[0], fr[3]) * mpp;
-    let vOff = 0;
+    const topM   = distance(fr[0], fr[1]) * mpp; // TL→TR
+    const leftM  = distance(fr[0], fr[3]) * mpp; // TL→BL
+
+    let vOff = 0; // oben (First)
     for (; vOff + modH <= leftM + 1e-9; vOff += stepM) {
       const u0=0, v0=vOff, u1=modW/topM, v1=(vOff+modH)/leftM;
       if (acceptModuleUV(u0,v0,u1,v1, fr, poly, mpp)) break;
     }
     if (vOff + modH > leftM + 1e-9) vOff = 0;
-    let uOff = 0;
+
+    let uOff = 0; // links (Ortgang)
     for (; uOff + modW <= topM + 1e-9; uOff += stepM) {
       const u0=uOff/topM, v0=vOff/leftM, u1=(uOff+modW)/topM, v1=(vOff+modH)/leftM;
       if (acceptModuleUV(u0,v0,u1,v1, fr, poly, mpp)) break;
     }
     if (uOff + modW > topM + 1e-9) uOff = 0;
+
     return { uOffM: uOff, vOffM: vOff, topM, leftM };
   };
 
-  /** Module erzeugen, 30 cm Rand, Start links & oben */
-  const placeModulesPerspective = () => {
-    if (!frame || !metersPerPixel) { alert("Bitte zuerst Frame initialisieren und Maßstab setzen."); return; }
-    if (!closed || points.length < 3) { alert("Bitte zuerst das Polygon schließen."); return; }
-
-    const topM   = distance(frame[0], frame[1]) * metersPerPixel;
-    const leftM  = distance(frame[0], frame[3]) * metersPerPixel;
+  /** Module erzeugen (pure Funktion → gibt Liste zurück) */
+  const computeModules = (fr:Pt[], poly:Pt[], mpp:number) : ModuleUV[] => {
+    const topM   = distance(fr[0], fr[1]) * mpp;
+    const leftM  = distance(fr[0], fr[3]) * mpp;
 
     const Wm = (moduleWmm / 1000);
     const Hm = (moduleHmm / 1000);
     const gap = 0.02;
-    const modW = orientation === "vertikal"   ? Wm : Hm;
-    const modH = orientation === "vertikal"   ? Hm : Wm;
+    const modW = orientation === "vertikal" ? Wm : Hm;
+    const modH = orientation === "vertikal" ? Hm : Wm;
 
-    const { uOffM, vOffM } = findAnchorOffsetsM(frame, points, metersPerPixel, modW, modH, 0.005);
+    const { uOffM, vOffM } = findAnchorOffsetsM(fr, poly, mpp, modW, modH, 0.005);
 
     const out: ModuleUV[] = [];
     let id = 0;
-
     for (let yM = vOffM; yM + modH <= leftM + 1e-9; yM += (modH + gap)) {
       for (let xM = uOffM; xM + modW <= topM + 1e-9; xM += (modW + gap)) {
         const u0 =  xM        / topM, v0 =  yM        / leftM;
         const u1 = (xM+modW)  / topM, v1 = (yM+modH)  / leftM;
-        if (!acceptModuleUV(u0,v0,u1,v1, frame, points, metersPerPixel)) continue;
+        if (!acceptModuleUV(u0,v0,u1,v1, fr, poly, mpp)) continue;
         out.push({ id: String(id++), u0, v0, u1, v1 });
       }
     }
-    setModulesUV(out);
-    setMode("modules");
+    return out;
   };
 
   /** Reset */
@@ -314,34 +295,37 @@ export default function PVDachPlaner() {
     setMetersPerPixel(null); setModulesUV([]); setFrame(null); setFrameDrag(null);
   };
 
-  /** Render-Hilfen */
-  const pxPerM = metersPerPixel ? (1 / metersPerPixel) : 0;
-  const showCross = dragIndex !== null || frameDrag !== null;
-
   /** --- Auto-Workflow beim Schließen --- */
   const onToggleClosePolygon = () => {
     if (!closed) {
-      // schließen -> Maßstab -> Frame
-      if (points.length < 3) { alert("Bitte erst mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."); return; }
+      if (points.length < 3) { alert("Bitte mind. 3 Punkte setzen (Traufe→Traufe→Ortgang)."); return; }
+
+      // 1) schließen
       setClosed(true);
 
+      // 2) Maßstab (sofort)
       const mpp = recomputeScaleNow();
-      if (mpp == null) {
-        alert("Maßstab konnte nicht berechnet werden. Bitte Referenzen prüfen.");
-        return;
-      }
+      if (mpp == null) { alert("Maßstab konnte nicht berechnet werden. Referenzen prüfen."); return; }
       setMetersPerPixel(mpp);
 
-      const ok = initFrameFromPolygonWith(mpp);
-      if (!ok) {
-        // evtl. noch nicht 4 Punkte → Nutzer Hinweis
-        // (Frame lässt sich später manuell initialisieren)
-      }
+      // 3) Frame aus Polygon (sofort)
+      const fr = frameFromPolygonNow(points);
+      if (!fr) { alert("Rahmen benötigt 4 Ecken. Bitte Polygon/Ecken prüfen."); return; }
+      setFrame(fr);
+      setMode("frame");
+
+      // 4) Module sofort berechnen & setzen
+      const mods = computeModules(fr, points, mpp);
+      setModulesUV(mods);
+      setMode("modules");
     } else {
-      // öffnen
       setClosed(false);
+      setModulesUV([]);
     }
   };
+
+  /** Render-Hilfen */
+  const pxPerM = metersPerPixel ? (1 / metersPerPixel) : 0;
 
   return (
     <div>
@@ -388,7 +372,7 @@ export default function PVDachPlaner() {
           }</span>
         </div>
 
-        {/* Referenz-Eingaben */}
+        {/* Referenzen (nur Felder, KEIN „Maßstab berechnen“-Button mehr) */}
         {cover.kind === "tile" ? (
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <label> Ziegel <b>Ortgang</b> (Anzahl):
@@ -397,12 +381,6 @@ export default function PVDachPlaner() {
             <label> Ziegel <b>Traufe</b> (Anzahl):
               <input type="number" min={1} value={countTraufe} onChange={(e)=>setCountTraufe(e.target.value)} style={{ width: 100, marginLeft: 6 }} />
             </label>
-            {/* Button bleibt, ist aber nicht mehr nötig – läuft automatisch beim Schließen */}
-            <button onClick={()=>{
-              const mpp = recomputeScaleNow();
-              if (mpp==null) { alert("Referenzen unvollständig."); return; }
-              setMetersPerPixel(mpp);
-            }}>Maßstab berechnen</button>
             <span style={{ opacity: .7 }}>
               Kante1 (P1→P2)=Traufe, Kante2 (P2→P3)=Ortgang – automatisch erkannt.
             </span>
@@ -415,11 +393,6 @@ export default function PVDachPlaner() {
             <label> Länge <b>Traufe</b> (m):
               <input type="number" step="0.01" value={lenTraufeM} onChange={(e)=>setLenTraufeM(e.target.value)} style={{ width: 120, marginLeft: 6 }} />
             </label>
-            <button onClick={()=>{
-              const mpp = recomputeScaleNow();
-              if (mpp==null) { alert("Referenzen unvollständig."); return; }
-              setMetersPerPixel(mpp);
-            }}>Maßstab berechnen</button>
             <span style={{ opacity: .7 }}>
               Kante1 (P1→P2)=Traufe, Kante2 (P2→P3)=Ortgang – automatisch erkannt.
             </span>
@@ -429,7 +402,7 @@ export default function PVDachPlaner() {
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={() => setMode("polygon")}>Polygon setzen</button>
           <button onClick={onToggleClosePolygon} disabled={points.length<3}>
-            {closed ? "Polygon öffnen" : "Polygon schließen (Maßstab & Rahmen auto)"}
+            {closed ? "Polygon öffnen" : "Polygon schließen (Maßstab+Rahmen+Module auto)"}
           </button>
           <button onClick={() => setPoints(p=>p.slice(0,-1))} disabled={points.length===0 || closed}>
             Letzten Punkt löschen
@@ -437,7 +410,7 @@ export default function PVDachPlaner() {
           <button onClick={() => { setPoints([]); setClosed(false); }}>Fläche zurücksetzen</button>
         </div>
 
-        {/* Raster & Module */}
+        {/* Modulraster (ohne „Module einzeichnen“-Button) */}
         <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, display: "grid", gap: 8 }}>
           <div style={{ fontWeight: 600 }}>Modulraster (perspektivisch)</div>
 
@@ -464,44 +437,14 @@ export default function PVDachPlaner() {
               Transparenz
               <input type="range" min={0.2} max={1} step={0.05} value={opacity} onChange={(e)=>setOpacity(parseFloat(e.target.value))} />
             </label>
-          </div>
-
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button onClick={()=>initFrameFromPolygonWith(metersPerPixel)} disabled={!closed}>Raster-Rahmen initialisieren</button>
             <button onClick={()=>setMode("frame")} disabled={!frame}>Rahmen bearbeiten</button>
-            <button onClick={placeModulesPerspective} disabled={!frame}>Module einzeichnen</button>
             <button onClick={()=>setMode("modules")} disabled={modulesUV.length===0}>Module bearbeiten</button>
-            <button onClick={clearModules} disabled={modulesUV.length===0}>Module löschen</button>
+            <button onClick={()=>setModulesUV([])} disabled={modulesUV.length===0}>Module löschen</button>
           </div>
 
           {metersPerPixel
             ? <b>Maßstab: {metersPerPixel.toFixed(5)} m/px {closed && points.length>=3 && <> • Fläche: {(polygonAreaPx2(points)*metersPerPixel*metersPerPixel).toFixed(2)} m²</>}</b>
-            : <span>Maßstab noch nicht gesetzt – Referenzen eingeben (läuft automatisch beim Schließen).</span>}
-
-          {/* Live-Kontrolle */}
-          {metersPerPixel && (
-            <div style={{opacity:.8}}>
-              <span style={{marginRight:16}}>
-                Traufe: {traufePx()?.toFixed(0) ?? "-"} px → {(traufePx() ? (traufePx()!*metersPerPixel).toFixed(2) : "-")} m
-              </span>
-              <span style={{marginRight:16}}>
-                Ortgang: {ortgangPx()?.toFixed(0) ?? "-"} px → {(ortgangPx() ? (ortgangPx()!*metersPerPixel).toFixed(2) : "-")} m
-              </span>
-              {frame && (
-                <>
-                  <span style={{marginRight:16}}>
-                    Frame-Top: {(distance(frame[0],frame[1])*metersPerPixel).toFixed(2)} m
-                  </span>
-                  <span style={{marginRight:16}}>
-                    Frame-Left: {(distance(frame[0],frame[3])*metersPerPixel).toFixed(2)} m
-                  </span>
-                  <span style={{marginRight:16}}>
-                    Modul (B×H): {((orientation==="vertikal"?moduleWmm:moduleHmm)/1000).toFixed(3)}×{((orientation==="vertikal"?moduleHmm:moduleWmm)/1000).toFixed(3)} m
-                  </span>
-                </>
-              )}
-            </div>
-          )}
+            : <span>Maßstab wird beim Schließen automatisch gesetzt.</span>}
         </div>
       </div>
 
@@ -522,7 +465,7 @@ export default function PVDachPlaner() {
             onClick={onImgClick}
           />
 
-          {/* SVG-Overlay (nimmt Clicks für Modul-Toggle an) */}
+          {/* SVG-Overlay */}
           <svg
             style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "auto" }}
             onClick={(e)=>handleClickAt(e.clientX, e.clientY)}
@@ -535,7 +478,7 @@ export default function PVDachPlaner() {
               </pattern>
             </defs>
 
-            {/* Module */}
+            {/* Modules */}
             {frame && modulesUV.map(m => {
               if (m.removed) return null;
               const poly = uvRectToPolyPx(m, frame);
