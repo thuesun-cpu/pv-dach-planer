@@ -241,7 +241,8 @@ export default function PVDachPlaner() {
   };
 
   /** Start Offsets (links+oben/First) suchen */
-  const findAnchorOffsetsM = (fr:Pt[], poly:Pt[], mpp:number, modW:number, modH:number, stepM=0.005) =>{
+  const findAnchorOffsetsM = (
+ = (fr:Pt[], poly:Pt[], mpp:number, modW:number, modH:number, stepM=0.005) =>{
     const topM   = distance(fr[0], fr[1]) * mpp; // TL→TR
     const leftM  = distance(fr[0], fr[3]) * mpp; // TL→BL
 
