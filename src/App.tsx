@@ -92,7 +92,7 @@ export default function PVDachPlaner() {
   // Modus
   const [mode, setMode] = useState<"polygon" | "frame" | "modules">("polygon");
 
-  // für rotes Fadenkreuz (statt Handcursor)
+  // rotes Fadenkreuz beim Draggen
   const [mousePos, setMousePos] = useState<Pt | null>(null);
 
   const imgRef = useRef<HTMLImageElement | null>(null);
@@ -107,19 +107,20 @@ export default function PVDachPlaner() {
     };
   };
 
-  /** Klick ins Bild */
-  const onImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
-    const p = relPos(e);
+  /** Klick auf Bild oder Overlay (für Module-Toggle im SVG) */
+  const handleClickAt = (clientX: number, clientY: number) => {
+    const r = imgRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const p = { x: Math.min(Math.max(clientX - r.left, 0), r.width), y: Math.min(Math.max(clientY - r.top, 0), r.height) };
 
     if (mode === "modules" && frame) {
-      // Toggle einzelnes Modul
       const polys = modulesUV.map(m => ({ id: m.id, poly: uvRectToPolyPx(m, frame) }));
       for (let i = polys.length - 1; i >= 0; i--) {
         if (pointInPolygon(p.x, p.y, polys[i].poly)) {
           setModulesUV(prev => {
             const cp = [...prev];
             const idx = cp.findIndex(mm => mm.id === polys[i].id);
-            if (idx >= 0) cp[idx] = { ...cp[idx], removed: !cp[idx].removed };
+            if (idx >= 0) cp[idx] = { ...cp[idx], removed: !cp[idx].removed }; // Toggle ↔ wieder einblenden
             return cp;
           });
           return;
@@ -130,7 +131,9 @@ export default function PVDachPlaner() {
     if (mode === "polygon" && !closed) setPoints(prev => [...prev, p]);
   };
 
-  /** Polygonpunkte & Frame ziehen + Fadenkreuz */
+  const onImgClick = (e: React.MouseEvent<HTMLImageElement>) => handleClickAt(e.clientX, e.clientY);
+
+  /** Mouse Move + rotes Kreuz + Draggen */
   const onMouseMoveOverlay = (e: React.MouseEvent) => {
     const p = relPos(e);
     setMousePos(p);
@@ -261,7 +264,52 @@ export default function PVDachPlaner() {
     return [pTL, pTR, pBR, pBL];
   };
 
-  /** Module erzeugen (UV), mit 30 cm Mindestabstand Außenkante */
+  /** Prüfer für ein Modul an (u0,v0,u1,v1) */
+  const acceptModuleUV = (u0:number,v0:number,u1:number,v1:number, fr:Pt[], poly:Pt[], mpp:number) =>{
+    const corners = [
+      mapUVtoPx(u0, v0, fr),
+      mapUVtoPx(u1, v0, fr),
+      mapUVtoPx(u1, v1, fr),
+      mapUVtoPx(u0, v1, fr),
+    ];
+    const samples = sampleModuleEdgePoints(corners);
+
+    // 1) komplett innerhalb
+    for (const s of samples) if (!pointInPolygon(s.x, s.y, poly)) return false;
+
+    // 2) Distanz >= 0,30 m zur Dachkante
+    const SAFETY = 0.30;
+    for (const s of samples) {
+      const dM = minDistToEdgesPx(s, poly) * mpp;
+      if (dM < SAFETY) return false;
+    }
+    return true;
+  };
+
+  /** Links/oben Offset finden (am First & linken Ortgang beginnen) */
+  const findAnchorOffsetsM = (fr:Pt[], poly:Pt[], mpp:number, modW:number, modH:number, stepM=0.005) =>{
+    const topM   = distance(fr[0], fr[1]) * mpp; // TL->TR
+    const leftM  = distance(fr[0], fr[3]) * mpp; // TL->BL
+
+    // erst vertikal (oben/First), dann horizontal (links)
+    let vOff = 0;
+    for (; vOff + modH <= leftM + 1e-9; vOff += stepM) {
+      const u0=0, v0=vOff, u1=modW/topM, v1=(vOff+modH)/leftM;
+      if (acceptModuleUV(u0,v0,u1,v1, fr, poly, mpp)) break;
+    }
+    if (vOff + modH > leftM + 1e-9) vOff = 0; // Fallback
+
+    let uOff = 0;
+    for (; uOff + modW <= topM + 1e-9; uOff += stepM) {
+      const u0=uOff/topM, v0=vOff/leftM, u1=(uOff+modW)/topM, v1=(vOff+modH)/leftM;
+      if (acceptModuleUV(u0,v0,u1,v1, fr, poly, mpp)) break;
+    }
+    if (uOff + modW > topM + 1e-9) uOff = 0; // Fallback
+
+    return { uOffM: uOff, vOffM: vOff, topM, leftM };
+  };
+
+  /** Module erzeugen (UV), 30 cm Mindestabstand, Start links & oben */
   const placeModulesPerspective = () => {
     if (!frame || !metersPerPixel) { alert("Bitte zuerst Frame initialisieren und Maßstab setzen."); return; }
     if (!closed || points.length < 3) { alert("Bitte zuerst das Polygon schließen."); return; }
@@ -276,37 +324,19 @@ export default function PVDachPlaner() {
     const modW = orientation === "vertikal"   ? Wm : Hm;
     const modH = orientation === "vertikal"   ? Hm : Wm;
 
+    // Anker-Offsets suchen (links+oben), damit Belegung am First & linken Ortgang startet
+    const { uOffM, vOffM } = findAnchorOffsetsM(frame, points, metersPerPixel, modW, modH, 0.005);
+
     const out: ModuleUV[] = [];
     let id = 0;
 
-    for (let yM = 0; yM + modH <= leftM + 1e-9; yM += (modH + gap)) {
-      for (let xM = 0; xM + modW <= topM + 1e-9; xM += (modW + gap)) {
+    for (let yM = vOffM; yM + modH <= leftM + 1e-9; yM += (modH + gap)) {
+      for (let xM = uOffM; xM + modW <= topM + 1e-9; xM += (modW + gap)) {
 
         const u0 =  xM        / topM, v0 =  yM        / leftM;
         const u1 = (xM+modW)  / topM, v1 = (yM+modH)  / leftM;
 
-        const poly = [
-          mapUVtoPx(u0, v0, frame),
-          mapUVtoPx(u1, v0, frame),
-          mapUVtoPx(u1, v1, frame),
-          mapUVtoPx(u0, v1, frame),
-        ];
-
-        // 1) innerhalb
-        const samples = sampleModuleEdgePoints(poly);
-        let allInside = true;
-        for (const s of samples) { if (!pointInPolygon(s.x, s.y, points)) { allInside = false; break; } }
-        if (!allInside) continue;
-
-        // 2) >= 0,30 m Abstand zur Dachkante
-        const SAFETY = 0.30;
-        let ok = true;
-        for (const s of samples) {
-          const dPx = minDistToEdgesPx(s, points);
-          const dM  = dPx * metersPerPixel;
-          if (dM < SAFETY) { ok = false; break; }
-        }
-        if (!ok) continue;
+        if (!acceptModuleUV(u0,v0,u1,v1, frame, points, metersPerPixel)) continue;
 
         out.push({ id: String(id++), u0, v0, u1, v1 });
       }
@@ -506,8 +536,7 @@ export default function PVDachPlaner() {
             marginTop: 12,
             position: "relative",
             display: "inline-block",
-            // während Draggen: Cursor ausblenden, rotes Kreuz wird gerendert
-            cursor: showCross ? "none" : "crosshair",
+            cursor: (dragIndex!==null || frameDrag!==null) ? "none" : "crosshair",
           }}
           onMouseMove={onMouseMoveOverlay} onMouseUp={onMouseUpOverlay} onMouseLeave={onMouseUpOverlay}
         >
@@ -517,8 +546,11 @@ export default function PVDachPlaner() {
             onClick={onImgClick}
           />
 
-          {/* SVG-Overlay */}
-          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+          {/* SVG-Overlay (nimmt Clicks für Modul-Toggle an) */}
+          <svg
+            style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "auto" }}
+            onClick={(e)=>handleClickAt(e.clientX, e.clientY)}
+          >
             <defs>
               {/* Full-Black Optik */}
               <pattern id="mod-fullblack" width="100" height="100" patternUnits="userSpaceOnUse">
@@ -540,7 +572,7 @@ export default function PVDachPlaner() {
                            opacity={opacity} stroke="#111" strokeWidth={0.6} />
                 );
               } else {
-                // Vertex: nur Kontur + Diamant
+                // Vertex: Kontur + Diamant
                 const cx = (poly[0].x + poly[2].x) / 2;
                 const cy = (poly[0].y + poly[2].y) / 2;
                 const d = Math.max(6, 0.02 * pxPerM);
@@ -598,8 +630,8 @@ export default function PVDachPlaner() {
               </>
             )}
 
-            {/* ROTES MARKIERUNGSKREUZ (ersetzt Handcursor beim Ziehen) */}
-            {showCross && mousePos && (
+            {/* ROTES MARKIERUNGSKREUZ */}
+            {(dragIndex!==null || frameDrag!==null) && mousePos && (
               <g>
                 <line x1={mousePos.x-10} y1={mousePos.y} x2={mousePos.x+10} y2={mousePos.y} stroke="red" strokeWidth={2}/>
                 <line x1={mousePos.x} y1={mousePos.y-10} x2={mousePos.x} y2={mousePos.y+10} stroke="red" strokeWidth={2}/>
