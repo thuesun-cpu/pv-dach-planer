@@ -1,398 +1,564 @@
-import React, { useCallback, useMemo, useRef, useState, useEffect } from "react";
+import React, { useRef, useState } from "react";
 
-/** === kleine Geometrie-Utils === */
-type Pt = { x: number; y: number };
+/** ---------- Typen ---------- */
+type Pt = { x: number; y: number };          // Bildkoordinaten (px)
+type ModuleUV = { id: string; u0: number; v0: number; u1: number; v1: number; removed?: boolean };
 
-const dot = (a: Pt, b: Pt) => a.x * b.x + a.y * b.y;
-const sub = (a: Pt, b: Pt): Pt => ({ x: a.x - b.x, y: a.y - b.y });
-const add = (a: Pt, b: Pt): Pt => ({ x: a.x + b.x, y: a.y + b.y });
-const mul = (a: Pt, s: number): Pt => ({ x: a.x * s, y: a.y * s });
-const len = (a: Pt) => Math.hypot(a.x, a.y);
-const dist = (a: Pt, b: Pt) => Math.hypot(a.x - b.x, a.y - b.y);
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+type RoofCover =
+  | { kind: "tile"; variant: "einfalz" | "doppelfalz_beton" | "tonstein" | "jumbo" }
+  | { kind: "sheet"; variant: "bitumen" | "wellblech" | "trapezblech" };
 
-function distPointToSegPx(p: Pt, a: Pt, b: Pt) {
-  const ap = sub(p, a);
-  const ab = sub(b, a);
-  const t = clamp((ap.x * ab.x + ap.y * ab.y) / ((ab.x * ab.x + ab.y * ab.y) || 1), 0, 1);
-  const proj = add(a, mul(ab, t));
-  return len(sub(p, proj));
+const TILE_SPECS_CM = {
+  einfalz: { w_cm: 21.5, h_cm: 33, label: "Einfalzziegel 21,5×33 cm" },
+  doppelfalz_beton: { w_cm: 30,  h_cm: 33, label: "Doppelfalzziegel / Beton 30×33 cm" },
+  tonstein:         { w_cm: 30,  h_cm: 33, label: "Tonstein 30×33 cm" },
+  jumbo:            { w_cm: 34,  h_cm: 36, label: "Jumboziegel 34×36 cm" },
+} as const;
+
+/** ---------- Geometrie / Utils ---------- */
+function distance(a: Pt, b: Pt) { return Math.hypot(a.x - b.x, a.y - b.y); }
+function polygonAreaPx2(pts: Pt[]) {
+  if (pts.length < 3) return 0;
+  let s = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const p = pts[i], q = pts[(i + 1) % pts.length];
+    s += p.x * q.y - q.x * p.y;
+  }
+  return Math.abs(s) / 2;
+}
+function pointInPolygon(px: number, py: number, poly: Pt[]) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+function distPointToSegPx(px: number, py: number, x1: number, y1: number, x2: number, y2: number) {
+  const A = px - x1, B = py - y1, C = x2 - x1, D = y2 - y1;
+  const dot = A*C + B*D, lenSq = C*C + D*D;
+  let t = lenSq !== 0 ? dot / lenSq : -1;
+  t = Math.max(0, Math.min(1, t));
+  const xx = x1 + t*C, yy = y1 + t*D;
+  return Math.hypot(px - xx, py - yy);
 }
 function minDistToEdgesPx(p: Pt, poly: Pt[]) {
   let m = Infinity;
   for (let i = 0; i < poly.length; i++) {
     const a = poly[i], b = poly[(i + 1) % poly.length];
-    m = Math.min(m, distPointToSegPx(p, a, b));
+    m = Math.min(m, distPointToSegPx(p.x, p.y, a.x, a.y, b.x, b.y));
   }
   return m;
 }
-const mid = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
-const rectFromTLTRBRBL = (tl: Pt, tr: Pt, br: Pt, bl: Pt) => [tl, tr, br, bl] as Pt[];
 
-function pointInPoly(p: Pt, poly: Pt[]) {
-  let wn = 0;
-  for (let i = 0; i < poly.length; i++) {
-    const a = poly[i], b = poly[(i + 1) % poly.length];
-    if (a.y <= p.y) {
-      if (b.y > p.y && (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) > 0) wn++;
-    } else {
-      if (b.y <= p.y && (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) < 0) wn--;
-    }
-  }
-  return wn !== 0;
-}
-function sampleEdgePoints(rect: Pt[]): Pt[] {
-  const [tl, tr, br, bl] = rect;
-  const c = mid(tl, br);
-  return [tl, tr, br, bl, mid(tl, tr), mid(tr, br), mid(br, bl), mid(bl, tl), c];
+/** 8 Stützpunkte der Modulkontur: 4 Ecken + 4 Kantenmittelpunkte */
+function sampleModuleEdgePoints(poly: Pt[]): Pt[] {
+  const [tl, tr, br, bl] = poly;
+  const mid = (a: Pt, b: Pt): Pt => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
+  return [tl, tr, br, bl, mid(tl, tr), mid(tr, br), mid(br, bl), mid(bl, tl)];
 }
 
-/* =================== Komponente =================== */
-
+/** ---------- Hauptkomponente ---------- */
 export default function PVDachPlaner() {
-  // Bild
   const [image, setImage] = useState<string | null>(null);
 
-  // Polygon
+  // Polygon (Dachfläche) in px
   const [points, setPoints] = useState<Pt[]>([]);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [closed, setClosed] = useState(false);
 
-  // Dachhaut + Ziegel-Referenz
-  const [cover, setCover] = useState<{
-    kind: "tile" | "sheet";
-    variant: "doppelfalz_betonstein" | "einfalz_tonstein" | "doppelfalz_tonstein" | "jumbo";
-  }>({ kind: "tile", variant: "doppelfalz_betonstein" });
-
-  // *** WICHTIG: Ziegel-Anzahl an Traufe/Ortgang (für Maßstab) ***
+  // Dachhaut & Kalibrierung
+  const [cover, setCover] = useState<RoofCover>({ kind: "tile", variant: "einfalz" });
   const [countOrtgang, setCountOrtgang] = useState<string>("");
-  const [countTraufe, setCountTraufe] = useState<string>("");
+  const [countTraufe,  setCountTraufe]  = useState<string>("");
+  const [lenOrtgangM,  setLenOrtgangM]  = useState<string>("");
+  const [lenTraufeM,   setLenTraufeM]   = useState<string>("");
 
-  // (optional) Längen in m – aktuell nicht per UI genutzt, aber unterstützt
-  const [lenOrtgangM, setLenOrtgangM] = useState<string>("");
-  const [lenTraufeM, setLenTraufeM] = useState<string>("");
-
+  // Referenz-Segmente (je 2 Punkte) in px
+  const [segOrtgang, setSegOrtgang] = useState<Pt[]>([]);
+  const [segTraufe,  setSegTraufe]  = useState<Pt[]>([]);
   const [metersPerPixel, setMetersPerPixel] = useState<number | null>(null);
 
   // Modul-Parameter
   const [moduleWmm, setModuleWmm] = useState<number>(1176);
   const [moduleHmm, setModuleHmm] = useState<number>(1134);
-  const [orientation, setOrientation] = useState<"vertikal" | "horizontal">("vertikal");
+  const [orientation, setOrientation] = useState<"horizontal" | "vertikal">("horizontal");
   const [moduleStyle, setModuleStyle] = useState<"fullblack" | "vertex">("fullblack");
-  const [opacity, setOpacity] = useState<number>(0.85);
+  const [opacity, setOpacity] = useState<number>(0.9);
 
-  // Sicherheitsabstand außen (cm)
-  const [edgeMarginCm, setEdgeMarginCm] = useState<number>(30);
+  // Raster-Rahmen (projektiv) – TL, TR, BR, BL in px
+  const [frame, setFrame] = useState<Pt[] | null>(null);
+  const [frameDrag, setFrameDrag] = useState<{ type: "move" | "corner"; idx?: number } | null>(null);
 
-  // Module in UV
-  const [modulesUV, setModulesUV] = useState<{ u: number; v: number; w: number; h: number; hidden?: boolean }[]>([]);
+  // Module als UV-Rechtecke (damit sie am Frame „kleben“)
+  const [modulesUV, setModulesUV] = useState<ModuleUV[]>([]);
 
-  const roofSizeFromVariant = useCallback(() => {
-    switch (cover.variant) {
-      case "einfalz_tonstein": return { bw: 0.215, bh: 0.33 };
-      case "doppelfalz_tonstein": return { bw: 0.30, bh: 0.33 };
-      case "doppelfalz_betonstein": return { bw: 0.30, bh: 0.33 };
-      case "jumbo": return { bw: 0.34, bh: 0.36 };
-      default: return { bw: 0.30, bh: 0.33 };
-    }
-  }, [cover.variant]);
+  // Modus
+  const [mode, setMode] = useState<"polygon" | "segOrtgang" | "segTraufe" | "frame" | "modules">("polygon");
 
-  const canonicalFrame = useCallback((poly: Pt[]): Pt[] | null => {
-    if (poly.length < 4) return null;
-    const xs = poly.map(p => p.x), ys = poly.map(p => p.y);
-    const minx = Math.min(...xs), maxx = Math.max(...xs);
-    const miny = Math.min(...ys), maxy = Math.max(...ys);
-    const pick = (tx: number, ty: number) => {
-      let best = 1e12, bestP = poly[0];
-      for (const p of poly) {
-        const d = Math.hypot(p.x - tx, p.y - ty);
-        if (d < best) { best = d; bestP = p; }
-      }
-      return bestP;
+  const imgRef = useRef<HTMLImageElement | null>(null);
+
+  /** Position relativ zum Bild */
+  const relPos = (e: React.MouseEvent) => {
+    const r = imgRef.current?.getBoundingClientRect();
+    if (!r) return { x: 0, y: 0 };
+    return {
+      x: Math.min(Math.max(e.clientX - r.left, 0), r.width),
+      y: Math.min(Math.max(e.clientY - r.top, 0), r.height),
     };
-    const tl = pick(minx, miny);
-    const tr = pick(maxx, miny);
-    const br = pick(maxx, maxy);
-    const bl = pick(minx, maxy);
-    return rectFromTLTRBRBL(tl, tr, br, bl);
-  }, []);
+  };
 
-  const computeMetersPerPixel = useCallback((frame: Pt[]) => {
-    if (frame.length !== 4) return null;
-    const { bw, bh } = roofSizeFromVariant();
+  /** Klick ins Bild */
+  const onImgClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    const p = relPos(e);
 
-    // 1) Ziegel-Anzahl vorhanden?
-    if (countOrtgang && countTraufe) {
-      const tra = parseFloat(countTraufe);
-      const ort = parseFloat(countOrtgang);
-      if (isFinite(tra) && isFinite(ort) && tra > 0 && ort > 0) {
-        const pxTraufe = dist(frame[0], frame[1]);
-        const pxOrt = dist(frame[0], frame[3]);
-        const mppTraufe = (tra * bw) / pxTraufe;
-        const mppOrt = (ort * bh) / pxOrt;
-        return (mppTraufe + mppOrt) / 2;
+    if (mode === "segOrtgang") { setSegOrtgang(prev => (prev.length >= 2 ? [p] : [...prev, p])); return; }
+    if (mode === "segTraufe")  { setSegTraufe(prev  => (prev.length >= 2 ? [p] : [...prev, p]));  return; }
+
+    if (mode === "modules" && frame) {
+      // Toggle einzelnes Modul: Hit-Test gegen aktuell verzerrte Polygone
+      const polys = modulesUV.map(m => ({ id: m.id, poly: uvRectToPolyPx(m, frame) }));
+      for (let i = polys.length - 1; i >= 0; i--) {
+        if (pointInPolygon(p.x, p.y, polys[i].poly)) {
+          setModulesUV(prev => {
+            const cp = [...prev];
+            const idx = cp.findIndex(mm => mm.id === polys[i].id);
+            if (idx >= 0) cp[idx] = { ...cp[idx], removed: !cp[idx].removed };
+            return cp;
+          });
+          return;
+        }
       }
     }
-    // 2) alternativ Längen in m
-    if (lenTraufeM && lenOrtgangM) {
-      const mT = parseFloat(lenTraufeM);
-      const mO = parseFloat(lenOrtgangM);
-      if (isFinite(mT) && isFinite(mO) && mT > 0 && mO > 0) {
-        const pxTraufe = dist(frame[0], frame[1]);
-        const pxOrt = dist(frame[0], frame[3]);
-        const mppTraufe = mT / pxTraufe;
-        const mppOrt = mO / pxOrt;
-        return (mppTraufe + mppOrt) / 2;
+
+    if (mode === "polygon" && !closed) setPoints(prev => [...prev, p]);
+  };
+
+  /** Polygonpunkte & Frame ziehen */
+  const startDragPoint = (i: number) => (e: React.MouseEvent) => { e.preventDefault(); setDragIndex(i); };
+  const onMouseMoveOverlay = (e: React.MouseEvent) => {
+    // Polygonpunkte
+    if (dragIndex !== null) {
+      const p = relPos(e);
+      setPoints(prev => { const cp = [...prev]; cp[dragIndex] = p; return cp; });
+    }
+    // Frame
+    if (frame && frameDrag) {
+      const p = relPos(e);
+      if (frameDrag.type === "corner" && frameDrag.idx !== undefined) {
+        setFrame(prev => {
+          if (!prev) return prev;
+          const cp = [...prev]; cp[frameDrag.idx!] = p; return cp;
+        });
+      } else if (frameDrag.type === "move") {
+        const dx = (e as any).movementX ?? 0;
+        const dy = (e as any).movementY ?? 0;
+        setFrame(prev => prev?.map(pt => ({ x: pt.x + dx, y: pt.y + dy })) ?? prev);
       }
     }
-    return null;
-  }, [countOrtgang, countTraufe, lenOrtgangM, lenTraufeM, roofSizeFromVariant]);
+  };
+  const onMouseUpOverlay = () => { setDragIndex(null); setFrameDrag(null); };
 
-  const frame = useMemo(() => canonicalFrame(points), [points, canonicalFrame]);
+  /** Maßstab berechnen */
+  const recomputeScale = () => {
+    const mpps: number[] = [];
+    if (segOrtgang.length === 2) {
+      const px = distance(segOrtgang[0], segOrtgang[1]);
+      if (px > 0) {
+        if (cover.kind === "tile") {
+          const spec = TILE_SPECS_CM[cover.variant];
+          const c = parseFloat(countOrtgang.replace(",", "."));
+          if (isFinite(c) && c > 0) mpps.push((c * spec.w_cm / 100) / px);
+        } else {
+          const m = parseFloat(lenOrtgangM.replace(",", "."));
+          if (isFinite(m) && m > 0) mpps.push(m / px);
+        }
+      }
+    }
+    if (segTraufe.length === 2) {
+      const px = distance(segTraufe[0], segTraufe[1]);
+      if (px > 0) {
+        if (cover.kind === "tile") {
+          const spec = TILE_SPECS_CM[cover.variant];
+          const c = parseFloat(countTraufe.replace(",", "."));
+          if (isFinite(c) && c > 0) mpps.push((c * spec.h_cm / 100) / px);
+        } else {
+          const m = parseFloat(lenTraufeM.replace(",", "."));
+          if (isFinite(m) && m > 0) mpps.push(m / px);
+        }
+      }
+    }
+    if (mpps.length === 0) setMetersPerPixel(null);
+    else if (mpps.length === 1) setMetersPerPixel(mpps[0]);
+    else setMetersPerPixel((mpps[0] + mpps[1]) / 2);
+  };
 
-  // Beim Schließen Maßstab berechnen
-  useEffect(() => {
-    if (!closed || !frame) return;
-    const mpp = computeMetersPerPixel(frame);
-    setMetersPerPixel(mpp); // kann null sein, wenn noch keine Zahlen eingegeben sind
-  }, [closed, frame, computeMetersPerPixel]);
+  /** Fläche (m²) */
+  const areaM2 =
+    closed && points.length >= 3 && metersPerPixel
+      ? polygonAreaPx2(points) * metersPerPixel * metersPerPixel
+      : null;
 
-  // Raster auf Basis Maßstab + Mindestabstand
-  useEffect(() => {
-    if (!frame || !metersPerPixel) { setModulesUV([]); return; }
+  /** Raster-Rahmen initialisieren (aus BBox + 30cm innen) */
+  const initFrameFromPolygon = () => {
+    if (!metersPerPixel || points.length < 3) { alert("Bitte zuerst Maßstab setzen und Polygon schließen."); return; }
+    if (!closed) { alert("Bitte zuerst das Polygon schließen."); return; }
+    const xs = points.map(p => p.x), ys = points.map(p => p.y);
+    const minX = Math.min(...xs), maxX = Math.max(...xs);
+    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const pxPerM = 1 / metersPerPixel;
+    const marginPx = 0.30 * pxPerM;
+    const f: Pt[] = [
+      { x: minX + marginPx, y: minY + marginPx }, // TL
+      { x: maxX - marginPx, y: minY + marginPx }, // TR
+      { x: maxX - marginPx, y: maxY - marginPx }, // BR
+      { x: minX + marginPx, y: maxY - marginPx }, // BL
+    ];
+    setFrame(f);
+    setMode("frame");
+    setModulesUV([]); // alte Module verwerfen
+  };
 
-    const mpp = metersPerPixel;
-    const edgeMarginM = edgeMarginCm / 100;
+  /** Bilinear (nahezu perspektivisch) */
+  const mapUVtoPx = (u: number, v: number, fr: Pt[]) => {
+    const [tl, tr, br, bl] = fr;
+    const x = (1-u)*(1-v)*tl.x + u*(1-v)*tr.x + u*v*br.x + (1-u)*v*bl.x;
+    const y = (1-u)*(1-v)*tl.y + u*(1-v)*tr.y + u*v*br.y + (1-u)*v*bl.y;
+    return { x, y };
+  };
 
-    const tl = frame[0], tr = frame[1], br = frame[2], bl = frame[3];
-    const totalUM = dist(tl, tr) * mpp; // Traufe-Länge
-    const totalVM = dist(tl, bl) * mpp; // Ortgang-Länge
+  /** UV-Rechteck zu Pixel-Polygon (4 Punkte) */
+  const uvRectToPolyPx = (m: ModuleUV, fr: Pt[]) => {
+    const pTL = mapUVtoPx(m.u0, m.v0, fr);
+    const pTR = mapUVtoPx(m.u1, m.v0, fr);
+    const pBR = mapUVtoPx(m.u1, m.v1, fr);
+    const pBL = mapUVtoPx(m.u0, m.v1, fr);
+    return [pTL, pTR, pBR, pBL];
+  };
 
-    const modWm = (orientation === "vertikal" ? moduleWmm : moduleHmm) / 1000;
-    const modHm = (orientation === "vertikal" ? moduleHmm : moduleWmm) / 1000;
+  /** Module erzeugen (UV), 30 cm Mindestabstand **von der Außenkante** */
+  const placeModulesPerspective = () => {
+    if (!frame || !metersPerPixel) { alert("Bitte zuerst Frame initialisieren und Maßstab setzen."); return; }
+    if (!closed || points.length < 3) { alert("Bitte zuerst das Polygon schließen."); return; }
 
-    const usableUM = Math.max(0, totalUM - 2 * edgeMarginM);
-    const usableVM = Math.max(0, totalVM - 2 * edgeMarginM);
+    // reale Rahmenlängen (m) entlang oben/links
+    const topM   = distance(frame[0], frame[1]) * metersPerPixel; // TL->TR
+    const leftM  = distance(frame[0], frame[3]) * metersPerPixel; // TL->BL
 
-    const cols = Math.max(0, Math.floor(usableUM / modWm));
-    const rows = Math.max(0, Math.floor(usableVM / modHm));
+    // Modulmaß + 2cm Fuge
+    const baseWm = (moduleWmm / 1000);
+    const baseHm = (moduleHmm / 1000);
+    const gap = 0.02; // 2 cm
+    const modW = orientation === "horizontal" ? baseWm : baseHm;
+    const modH = orientation === "horizontal" ? baseHm : baseWm;
 
-    const uvToPx = (u: number, v: number): Pt => {
-      const su = u / totalUM, sv = v / totalVM;
-      const a = add(mul(tl, (1 - su) * (1 - sv)), mul(tr, su * (1 - sv)));
-      const b = add(mul(bl, (1 - su) * sv), mul(br, su * sv));
-      return add(a, sub(b, a));
-    };
+    const MARGIN_M = 0.30; // 30 cm
 
-    const newUV: { u: number; v: number; w: number; h: number }[] = [];
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const u0 = edgeMarginM + c * modWm;
-        const v0 = edgeMarginM + r * modHm;
+    const out: ModuleUV[] = [];
+    let id = 0;
 
-        const pTL = uvToPx(u0, v0);
-        const pTR = uvToPx(u0 + modWm, v0);
-        const pBR = uvToPx(u0 + modWm, v0 + modHm);
-        const pBL = uvToPx(u0, v0 + modHm);
-        const rect = [pTL, pTR, pBR, pBL];
+    for (let yM = 0; yM + modH <= leftM + 1e-9; yM += (modH + gap)) {
+      for (let xM = 0; xM + modW <= topM + 1e-9; xM += (modW + gap)) {
+        const u0 = xM / topM, v0 = yM / leftM;
+        const u1 = (xM + modW) / topM, v1 = (yM + modH) / leftM;
 
-        const samples = sampleEdgePoints(rect);
+        // Modulkontur im Bild (px)
+        const poly = [
+          mapUVtoPx(u0, v0, frame), // TL
+          mapUVtoPx(u1, v0, frame), // TR
+          mapUVtoPx(u1, v1, frame), // BR
+          mapUVtoPx(u0, v1, frame), // BL
+        ];
+
+        // 1) Alle Stützpunkte müssen innerhalb der Dachfläche liegen
+        const samples = sampleModuleEdgePoints(poly);
+        let allInside = true;
+        for (const s of samples) { if (!pointInPolygon(s.x, s.y, points)) { allInside = false; break; } }
+        if (!allInside) continue;
+
+        // 2) Mindestabstand 30 cm von der Außenkante: alle Stützpunkte >= 0.30 m
         let ok = true;
         for (const s of samples) {
-          if (!pointInPoly(s, frame)) { ok = false; break; }
-          if (minDistToEdgesPx(s, frame) * mpp < edgeMarginM) { ok = false; break; }
+          const dPx = minDistToEdgesPx(s, points);
+          const dM  = dPx * metersPerPixel;
+          if (dM < MARGIN_M) { ok = false; break; }
         }
-        if (ok) newUV.push({ u: u0, v: v0, w: modWm, h: modHm });
+        if (!ok) continue;
+
+        out.push({ id: String(id++), u0, v0, u1, v1 });
       }
     }
 
-    setModulesUV(newUV);
-  }, [frame, metersPerPixel, edgeMarginCm, orientation, moduleWmm, moduleHmm]);
+    setModulesUV(out);
+    setMode("modules");
+  };
 
-  const onPickImage = useCallback((f: File | null) => {
-    if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => setImage(rd.result as string);
-    rd.readAsDataURL(f);
-  }, []);
+  /** Reset */
+  const clearModules = () => setModulesUV([]);
+  const resetAll = () => {
+    setPoints([]); setDragIndex(null); setClosed(false);
+    setSegOrtgang([]); setSegTraufe([]); setMetersPerPixel(null);
+    setModulesUV([]); setFrame(null); setFrameDrag(null);
+  };
 
-  const onCanvasClick = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
-    if (closed) return;
-    const rect = (e.target as HTMLDivElement).getBoundingClientRect();
-    const p = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    setPoints(prev => [...prev, p]);
-  }, [closed]);
-
-  const onClosePolygon = useCallback(() => {
-    if (points.length < 4) return;
-    setClosed(true); // Maßstab + Raster laufen automatisch (Effects)
-  }, [points.length]);
-
-  const resetAll = useCallback(() => {
-    setPoints([]); setClosed(false);
-    setMetersPerPixel(null);
-    setModulesUV([]);
-  }, []);
-
-  const moduleFill = useMemo(() => {
-    return "rgba(20,20,20,1)"; // Full-Black/Vertex gleicher Fill; Linien zeigen Raster
-  }, []);
+  /** Render-Hilfen */
+  const pxPerM = metersPerPixel ? (1 / metersPerPixel) : 0;
 
   return (
-    <div style={{ fontFamily: "system-ui, Arial", fontSize: 14 }}>
-      {/* Toolbar */}
-      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <label>
-          Datei auswählen{" "}
-          <input type="file" accept="image/*" onChange={e => onPickImage(e.target.files?.[0] ?? null)} />
-        </label>
-
-        <span>Modus: <b>{closed ? "Module bearbeiten" : "Polygon setzen"}</b></span>
-
-        <button onClick={() => setPoints([])} disabled={closed || points.length === 0}>Letzten Punkt löschen</button>
-        <button onClick={resetAll}>Fläche zurücksetzen</button>
-
-        {/* Anzeige Stil / Transparenz */}
-        <label style={{ marginLeft: 6 }}>
-          Stil:
-          <select value={moduleStyle} onChange={e => setModuleStyle(e.target.value as any)} style={{ marginLeft: 6 }}>
-            <option value="fullblack">Full-Black</option>
-            <option value="vertex">Vertex</option>
-          </select>
-        </label>
-
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
-          Transparenz
-          <input type="range" min={0.2} max={1} step={0.05} value={opacity} onChange={e => setOpacity(parseFloat(e.target.value))} />
-        </label>
-
-        {/* *** NEU: Ziegel-Anzahl-Felder sichtbar *** */}
-        <label> Ziegel Traufe (Anzahl):
-          <input
-            type="number" min={1} step={1}
-            value={countTraufe}
-            onChange={e=>setCountTraufe(e.target.value)}
-            style={{ width: 70, marginLeft: 6 }}
-          />
-        </label>
-
-        <label> Ziegel Ortgang (Anzahl):
-          <input
-            type="number" min={1} step={1}
-            value={countOrtgang}
-            onChange={e=>setCountOrtgang(e.target.value)}
-            style={{ width: 70, marginLeft: 6 }}
-          />
-        </label>
-
-        {/* Modulgröße / Ausrichtung */}
-        <span style={{ marginLeft: 12 }}>
-          Modul (BxH mm):
-          <input style={{ width: 60, marginLeft: 6 }} type="number" value={moduleWmm} onChange={e => setModuleWmm(parseInt(e.target.value || "0"))} />
-          ×
-          <input style={{ width: 60, marginLeft: 6 }} type="number" value={moduleHmm} onChange={e => setModuleHmm(parseInt(e.target.value || "0"))} />
-        </span>
-
-        <label style={{ marginLeft: 6 }}>
-          Ausrichtung:
-          <select value={orientation} onChange={e => setOrientation(e.target.value as any)} style={{ marginLeft: 6 }}>
-            <option value="vertikal">vertikal</option>
-            <option value="horizontal">horizontal</option>
-          </select>
-        </label>
-
-        <label> Mindestabstand (cm):
-          <input
-            type="number" step={1} min={0}
-            value={edgeMarginCm}
-            onChange={(e)=>setEdgeMarginCm(parseFloat(e.target.value || "0"))}
-            style={{ width: 70, marginLeft: 6 }}
-          />
-        </label>
-      </div>
-
-      <div style={{ marginTop: 8 }}>
-        Maßstab wird beim Schließen automatisch berechnet.
-      </div>
-
-      {/* Zeichenfläche */}
-      <div
-        style={{
-          width: "100%",
-          minHeight: 480,
-          marginTop: 10,
-          position: "relative",
-          background: image ? `url(${image}) center/contain no-repeat` : "#f6f6f6",
-          border: "1px solid #ddd",
+    <div>
+      {/* Upload */}
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (!file) return;
+          const reader = new FileReader();
+          reader.onload = () => { setImage(reader.result as string); resetAll(); };
+          reader.readAsDataURL(file);
         }}
-        onClick={onCanvasClick}
-      >
-        {/* Eckpunkte */}
-        {points.map((p, i) => (
-          <div key={i}
-               style={{
-                 position: "absolute", left: p.x - 4, top: p.y - 4, width: 8, height: 8,
-                 background: "#ff0", border: "2px solid #f80", borderRadius: 2, boxSizing: "border-box",
-               }} />
-        ))}
-        {/* Linien */}
-        {points.length >= 2 && points.map((p, i) => {
-          const q = points[(i + 1) % points.length];
-          if (!q || (i === points.length - 1 && !closed)) return null;
-          const dx = q.x - p.x, dy = q.y - p.y;
-          const w = Math.hypot(dx, dy);
-          const a = Math.atan2(dy, dx) * 180 / Math.PI;
-          return (
-            <div key={`l${i}`}
-                 style={{
-                   position: "absolute", left: p.x, top: p.y, width: w, height: 0,
-                   borderTop: "2px solid #f80", transform: `rotate(${a}deg)`, transformOrigin: "0 0"
-                 }} />
-          );
-        })}
+      />
 
-        {/* Module */}
-        {closed && frame && metersPerPixel && modulesUV.map((m, idx) => {
-          const [tl, tr, br, bl] = frame;
-          const totalUM = dist(tl, tr) * metersPerPixel;
-          const totalVM = dist(tl, bl) * metersPerPixel;
-          const uvToPx = (u: number, v: number): Pt => {
-            const su = u / totalUM, sv = v / totalVM;
-            const a = add(mul(tl, (1 - su) * (1 - sv)), mul(tr, su * (1 - sv)));
-            const b = add(mul(bl, (1 - su) * sv), mul(br, su * sv));
-            return add(a, sub(b, a));
-          };
-          const pTL = uvToPx(m.u, m.v);
-          const pTR = uvToPx(m.u + m.w, m.v);
-          const pBR = uvToPx(m.u + m.w, m.v + m.h);
-          const pBL = uvToPx(m.u, m.v + m.h);
-          const path = `M ${pTL.x},${pTL.y} L ${pTR.x},${pTR.y} L ${pBR.x},${pBR.y} L ${pBL.x},${pBL.y} Z`;
+      {/* Steuerleiste */}
+      <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <label>
+            Dachhaut:&nbsp;
+            <select
+              value={cover.kind === "tile" ? `tile:${cover.variant}` : `sheet:${cover.variant}`}
+              onChange={(e) => {
+                const [k, v] = e.target.value.split(":");
+                if (k === "tile") setCover({ kind: "tile", variant: v as any });
+                else setCover({ kind: "sheet", variant: v as any });
+                setSegOrtgang([]); setSegTraufe([]);
+                setCountOrtgang(""); setCountTraufe(""); setLenOrtgangM(""); setLenTraufeM("");
+                setMetersPerPixel(null);
+              }}
+            >
+              <option value="tile:einfalz">{TILE_SPECS_CM.einfalz.label}</option>
+              <option value="tile:doppelfalz_beton">{TILE_SPECS_CM.doppelfalz_beton.label}</option>
+              <option value="tile:tonstein">{TILE_SPECS_CM.tonstein.label}</option>
+              <option value="tile:jumbo">{TILE_SPECS_CM.jumbo.label}</option>
+              <option value="sheet:bitumen">Bitumendach</option>
+              <option value="sheet:wellblech">Wellblech (≥ 0,7 mm)</option>
+              <option value="sheet:trapezblech">Trapezblech (≥ 0,7 mm)</option>
+            </select>
+          </label>
 
-          return (
-            <svg key={idx} style={{ position: "absolute", left: 0, top: 0, pointerEvents: "auto" }}>
-              <path d={path}
-                    fill={m.hidden ? "transparent" : moduleFill}
-                    fillOpacity={m.hidden ? 0 : opacity}
-                    stroke="rgba(255,120,0,0.25)"
-                    strokeWidth={1} />
-              <path d={`M ${pTL.x},${pTL.y} L ${pBL.x},${pBL.y}`} stroke="rgba(255,120,0,0.25)" strokeWidth={1} />
-              <path d={`M ${pTR.x},${pTR.y} L ${pBR.x},${pBR.y}`} stroke="rgba(255,120,0,0.25)" strokeWidth={1} />
-            </svg>
-          );
-        })}
-      </div>
+          <span><b>Modus:</b> {
+            mode === "polygon" ? "Polygon setzen" :
+            mode === "segOrtgang" ? "Ortgang-Segment" :
+            mode === "segTraufe" ? "Traufe-Segment" :
+            mode === "frame" ? "Raster-Rahmen bearbeiten" :
+            "Module bearbeiten"
+          }</span>
+        </div>
 
-      {/* Aktionen */}
-      <div style={{ marginTop: 10, display: "flex", gap: 8, alignItems: "center" }}>
-        {!closed && (
-          <button onClick={onClosePolygon} disabled={points.length < 4}>Polygon schließen (auto)</button>
-        )}
-        {closed && (
+        {/* Referenzen */}
+        {cover.kind === "tile" ? (
           <>
-            <button onClick={() => setClosed(false)}>Rahmen bearbeiten</button>
-            <button onClick={() => setModulesUV([])} disabled={modulesUV.length === 0}>Module löschen</button>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label> Ziegel <b>Ortgang</b> (Anzahl):&nbsp;
+                <input type="number" min={1} value={countOrtgang} onChange={(e)=>setCountOrtgang(e.target.value)} style={{ width: 100 }} />
+              </label>
+              <button onClick={() => setMode("segOrtgang")}>Segment Ortgang (2 Klicks)</button>
+              <span>{segOrtgang.length}/2 Punkte {segOrtgang.length===2 && "✅"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label> Ziegel <b>Traufe</b> (Anzahl):&nbsp;
+                <input type="number" min={1} value={countTraufe} onChange={(e)=>setCountTraufe(e.target.value)} style={{ width: 100 }} />
+              </label>
+              <button onClick={() => setMode("segTraufe")}>Segment Traufe (2 Klicks)</button>
+              <span>{segTraufe.length}/2 Punkte {segTraufe.length===2 && "✅"}</span>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label> Länge <b>Ortgang</b> (m):&nbsp;
+                <input type="number" step="0.01" value={lenOrtgangM} onChange={(e)=>setLenOrtgangM(e.target.value)} style={{ width: 120 }} />
+              </label>
+              <button onClick={() => setMode("segOrtgang")}>Segment Ortgang (2 Klicks)</button>
+              <span>{segOrtgang.length}/2 Punkte {segOrtgang.length===2 && "✅"}</span>
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <label> Länge <b>Traufe</b> (m):&nbsp;
+                <input type="number" step="0.01" value={lenTraufeM} onChange={(e)=>setLenTraufeM(e.target.value)} style={{ width: 120 }} />
+              </label>
+              <button onClick={() => setMode("segTraufe")}>Segment Traufe (2 Klicks)</button>
+              <span>{segTraufe.length}/2 Punkte {segTraufe.length===2 && "✅"}</span>
+            </div>
           </>
         )}
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={recomputeScale}>Maßstab berechnen</button>
+          <button onClick={() => setMode("polygon")}>Polygon setzen</button>
+          <button onClick={() => { setSegOrtgang([]); setSegTraufe([]); setMetersPerPixel(null); }}>
+            Referenzen löschen
+          </button>
+          <button onClick={() => setClosed(c=>!c)} disabled={points.length<3}>
+            {closed ? "Polygon öffnen" : "Polygon schließen"}
+          </button>
+          <button onClick={() => setPoints(p=>p.slice(0,-1))} disabled={points.length===0 || closed}>
+            Letzten Punkt löschen
+          </button>
+          <button onClick={() => { setPoints([]); setClosed(false); }} disabled={points.length===0}>
+            Fläche zurücksetzen
+          </button>
+        </div>
+
+        {/* Raster-Rahmen & Module */}
+        <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 8, display: "grid", gap: 8 }}>
+          <div style={{ fontWeight: 600 }}>Modulraster (perspektivisch)</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            <label>Breite (mm):
+              <input type="number" value={moduleWmm} onChange={(e)=>setModuleWmm(parseInt(e.target.value||"0",10))} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <label>Höhe (mm):
+              <input type="number" value={moduleHmm} onChange={(e)=>setModuleHmm(parseInt(e.target.value||"0",10))} style={{ width: 100, marginLeft: 6 }} />
+            </label>
+            <label>Ausrichtung:
+              <select value={orientation} onChange={(e)=>setOrientation(e.target.value as any)} style={{ marginLeft: 6 }}>
+                <option value="horizontal">horizontal</option>
+                <option value="vertikal">vertikal</option>
+              </select>
+            </label>
+            <label>Stil:
+              <select value={moduleStyle} onChange={(e)=>setModuleStyle(e.target.value as any)} style={{ marginLeft: 6 }}>
+                <option value="fullblack">Full-Black</option>
+                <option value="vertex">Vertex (Kontur + Diamant)</option>
+              </select>
+            </label>
+            <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              Transparenz
+              <input type="range" min={0.2} max={1} step={0.05} value={opacity} onChange={(e)=>setOpacity(parseFloat(e.target.value))} />
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={initFrameFromPolygon}>Raster-Rahmen initialisieren</button>
+            <button onClick={()=>setMode("frame")} disabled={!frame}>Rahmen bearbeiten</button>
+            <button onClick={placeModulesPerspective} disabled={!frame}>Module einzeichnen</button>
+            <button onClick={()=>setMode("modules")} disabled={modulesUV.length===0}>Module bearbeiten</button>
+            <button onClick={clearModules} disabled={modulesUV.length===0}>Module löschen</button>
+          </div>
+
+          {metersPerPixel
+            ? <b>Maßstab: {metersPerPixel.toFixed(5)} m/px {closed && points.length>=3 && <> • Fläche: {(polygonAreaPx2(points)*metersPerPixel*metersPerPixel).toFixed(2)} m²</>}</b>
+            : <span>Maßstab noch nicht gesetzt – Referenzen + „Maßstab berechnen“.</span>}
+        </div>
       </div>
+
+      {/* Bild + Overlay */}
+      {image && (
+        <div
+          style={{ marginTop: 12, position: "relative", display: "inline-block" }}
+          onMouseMove={onMouseMoveOverlay} onMouseUp={onMouseUpOverlay} onMouseLeave={onMouseUpOverlay}
+        >
+          <img
+            ref={imgRef} src={image} alt="Dach"
+            style={{ maxWidth: "100%", display: "block", cursor: "crosshair" }}
+            onClick={onImgClick}
+          />
+
+          {/* SVG-Overlay: pointerEvents:'none', interaktive Elemente bekommen 'auto' */}
+          <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+            <defs>
+              {/* Full-Black Optik */}
+              <pattern id="mod-fullblack" width="100" height="100" patternUnits="userSpaceOnUse">
+                <rect x="0" y="0" width="100" height="100" fill="#0b0b0b" />
+                <path d="M0 50 H100 M50 0 V100" stroke="#111" strokeWidth="2"/>
+                <rect x="0" y="0" width="100" height="100" fill="none" stroke="#161616" strokeWidth="4" />
+              </pattern>
+            </defs>
+
+            {/* Referenz-Segmente */}
+            {segOrtgang.map((p, i) => <circle key={`o-${i}`} cx={p.x} cy={p.y} r={5} fill="#0070f3" />)}
+            {segOrtgang.length===2 && (
+              <line x1={segOrtgang[0].x} y1={segOrtgang[0].y} x2={segOrtgang[1].x} y2={segOrtgang[1].y}
+                    stroke="#0070f3" strokeWidth={2} strokeDasharray="6 4" />
+            )}
+            {segTraufe.map((p, i) => <circle key={`t-${i}`} cx={p.x} cy={p.y} r={5} fill="#00b894" />)}
+            {segTraufe.length===2 && (
+              <line x1={segTraufe[0].x} y1={segTraufe[0].y} x2={segTraufe[1].x} y2={segTraufe[1].y}
+                    stroke="#00b894" strokeWidth={2} strokeDasharray="6 4" />
+            )}
+
+            {/* Module (aus UV + aktuellem Frame) */}
+            {frame && modulesUV.map(m => {
+              if (m.removed) return null;
+              const poly = uvRectToPolyPx(m, frame);
+              const pts = poly.map(p => `${p.x},${p.y}`).join(" ");
+
+              if (moduleStyle === "fullblack") {
+                return (
+                  <polygon key={m.id} points={pts} fill="url(#mod-fullblack)"
+                           opacity={opacity} stroke="#111" strokeWidth={0.6} />
+                );
+              } else {
+                // Vertex: nur Kontur + Diamant in der Mitte
+                const cx = (poly[0].x + poly[2].x) / 2;
+                const cy = (poly[0].y + poly[2].y) / 2;
+                const d = Math.max(6, 0.02 * pxPerM);
+                return (
+                  <g key={m.id} opacity={opacity}>
+                    <polygon points={pts} fill="none" stroke="#0e7490" strokeWidth={1.2} />
+                    <polygon
+                      points={`${cx},${cy-d} ${cx+d},${cy} ${cx},${cy+d} ${cx-d},${cy}`}
+                      fill="#0ea5b7" stroke="#0b7285" strokeWidth={0.8}
+                    />
+                  </g>
+                );
+              }
+            })}
+
+            {/* Polygon (Dachfläche) */}
+            {!closed && points.map((p, i) => {
+              const n = points[i+1]; return n
+                ? <line key={`l-${i}`} x1={p.x} y1={p.y} x2={n.x} y2={n.y} stroke="red" strokeWidth={2} />
+                : null;
+            })}
+            {closed && points.length>=3 && (
+              <polygon points={points.map(p=>`${p.x},${p.y}`).join(" ")}
+                       fill="rgba(255,0,0,0.15)" stroke="red" strokeWidth={2} />
+            )}
+
+            {/* Ziehbare Polygon-Punkte */}
+            {points.map((p, i) => (
+              <circle key={`p-${i}`} cx={p.x} cy={p.y} r={6}
+                      fill={i===dragIndex ? "#d00" : "red"}
+                      style={{ cursor: "grab", pointerEvents: "auto" }}
+                      onMouseDown={(e)=>{ e.preventDefault(); setDragIndex(i); }} />
+            ))}
+
+            {/* Rahmen mit ziehbaren Ecken + Move */}
+            {frame && (
+              <>
+                {[0,1,2,3].map(i=>{
+                  const a = frame[i], b = frame[(i+1)%4];
+                  return <line key={`f-${i}`} x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                               stroke="#ffbf00" strokeWidth={2} strokeDasharray="6 4" />;
+                })}
+                {frame.map((p, i)=>(
+                  <rect key={`fc-${i}`} x={p.x-6} y={p.y-6} width={12} height={12}
+                        fill="#ffbf00" stroke="#7c5a00" strokeWidth={1}
+                        style={{ pointerEvents: "auto", cursor: "grab" }}
+                        onMouseDown={(e)=>{ e.preventDefault(); setMode("frame"); setFrameDrag({type:"corner", idx:i}); }} />
+                ))}
+                <polygon
+                  points={frame.map(p=>`${p.x},${p.y}`).join(" ")}
+                  fill="transparent"
+                  style={{ pointerEvents: "auto", cursor: "move" }}
+                  onMouseDown={(e)=>{ e.preventDefault(); setMode("frame"); setFrameDrag({type:"move"}); }}
+                />
+              </>
+            )}
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
