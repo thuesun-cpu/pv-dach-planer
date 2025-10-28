@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import PVDachPlaner from "./PVDachPlaner";
 
 /** ---------- Typen ---------- */
 type Pt = { x: number; y: number };
@@ -265,3 +265,6 @@ export default function PVDachPlaner() {
                 ? <polygon key={m.id} points={ptsS} fill="url(#fullb)" opacity={opacity} stroke="#111" strokeWidth={0.6} />
                 : (() => {
                   const cx = (poly[0].x + poly[2].x) / 2, cy = (poly[0
+export default function App() {
+  return <PVDachPlaner />;
+}
