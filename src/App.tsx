@@ -142,12 +142,24 @@ export default function PVDachPlaner(){
     return arr.reduce((a,b)=>a+b,0)/arr.length;
   };
 
-  /* ----- Frame aus Polygon → [TL,TR,BR,BL] ----- */
-  const buildFrame=():Pt[]|null=>{
-    if(pts.length<4) return null;
-    const p1=pts[0], p2=pts[1], p3=pts[2], p4=pts[3];
-    return [p4,p3,p2,p1]; // TL,TR,BR,BL
-  };
+/** Frame aus Polygon → [TL,TR,BR,BL]
+ * 3-Klick-Workflow:
+ *  P1 = Traufe links (BL)
+ *  P2 = Traufe rechts (BR)
+ *  P3 = Ortgang oben rechts (TR)
+ *  P4 = oben links (TL) = P1 + (P3 - P2)
+ *  4-Klick-Workflow: P4 wird direkt genutzt.
+ */
+const buildFrame = (): Pt[] | null => {
+  if (pts.length < 3) return null;
+  const p1 = pts[0]; // BL
+  const p2 = pts[1]; // BR
+  const p3 = pts[2]; // TR
+  const p4 = pts.length >= 4 ? pts[3] : { x: p1.x + (p3.x - p2.x), y: p1.y + (p3.y - p2.y) }; // TL
+  // Rückgabe: [TL, TR, BR, BL]
+  return [p4, p3, p2, p1];
+};
+
 
   /* ----- Bilinear ----- */
   const mapUV=(u:number,v:number, fr:Pt[])=>{
