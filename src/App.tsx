@@ -67,6 +67,7 @@ export default function PVDachPlaner() {
   const [pts, setPts] = useState<Pt[]>([]);
   const [drag, setDrag] = useState<number | null>(null);
   const [closed, setClosed] = useState(false);
+  const [closedPoly, setClosedPoly] = useState<Pt[] | null>(null);
 
   // Dachparameter
   const [cover, setCover] = useState<RoofCover>({ kind: "tile", variant: "doppelfalz_beton" });
@@ -145,7 +146,7 @@ export default function PVDachPlaner() {
     if (poly.length < 3) return null;
     const p1 = poly[0], p2 = poly[1], p3 = poly[2];
     const p4 = poly.length >= 4 ? poly[3] : { x: p1.x + (p3.x - p2.x), y: p1.y + (p3.y - p2.y) };
-    return [p4, p3, p2, p1];
+    return [p1, p2, p3, p4];
   };
   const mapUV = (u: number, v: number, fr: Pt[]) => {
     const [tl, tr, br, bl] = fr;
@@ -161,9 +162,10 @@ export default function PVDachPlaner() {
   };
 
   /** --- Module platzieren (robust) --- */
-  const placeModules = (mppLocal: number, fr: Pt[]) => {
+  const placeModules = (mppLocal: number, fr: Pt[], roofPoly: Pt[]) => {
     if (!isFinite(mppLocal) || mppLocal <= 0) return;
     if (!fr || fr.length !== 4) return;
+    if (!roofPoly || roofPoly.length < 3) return;
 
     const topM = dist(fr[0], fr[1]) * mppLocal;
     const leftM = dist(fr[0], fr[3]) * mppLocal;
@@ -184,8 +186,8 @@ export default function PVDachPlaner() {
         const uc = (u0r + u1r) / 2, vc = (v0r + v1r) / 2, hu = (u1r - u0r) / 2 * SHRINK, hv = (v1r - v0r) / 2 * SHRINK;
         const u0 = uc - hu, u1 = uc + hu, v0 = vc - hv, v1 = vc + hv;
         const poly = [mapUV(u0, v0, fr), mapUV(u1, v0, fr), mapUV(u1, v1, fr), mapUV(u0, v1, fr)];
-        const okInside = samplesOn(poly).every(s => pip(s.x, s.y, pts));
-        const okMargin = samplesOn(poly).every(s => (minDistToEdges(s, pts) * mppLocal) >= EDGE_M - 1e-6);
+        const okInside = samplesOn(poly).every(s => pip(s.x, s.y, roofPoly));
+        const okMargin = samplesOn(poly).every(s => (minDistToEdges(s, roofPoly) * mppLocal) >= EDGE_M - 1e-6);
         if (!okInside || !okMargin) break;
         out.push({ id: String(id++), u0, v0, u1, v1 });
         rowCount++; u += modW + GAP_M;
@@ -200,68 +202,215 @@ export default function PVDachPlaner() {
   /** --- Polygon schließen --- */
   const handleClose = () => {
     if (pts.length < 3) return;
-    setClosed(false); setMpp(null); setFrame(null); setMods([]); setGrid(null);
-    setTimeout(() => {
-      const mLocal = computeMPP(pts);
-      const fLocal = buildFrame(pts);
-      if (!mLocal || !isFinite(mLocal) || mLocal <= 0 || !fLocal) {
-        alert("❌ Maßstab oder Polygon ungültig."); return;
-      }
-      setClosed(true); setMpp(mLocal); setFrame(fLocal); placeModules(mLocal, fLocal);
-    }, 100);
+    const currentPts = pts.map(p => ({ ...p }));
+    setMods([]);
+    setGrid(null);
+    setClosed(false);
+    setClosedPoly(null);
+    const mLocal = computeMPP(currentPts);
+    const fLocal = buildFrame(currentPts);
+    if (!mLocal || !isFinite(mLocal) || mLocal <= 0 || !fLocal) {
+      alert("❌ Maßstab oder Polygon ungültig."); return;
+    }
+    setFrame(fLocal);
+    setMpp(mLocal);
+    setClosedPoly(currentPts);
+    setClosed(true);
   };
 
-  useEffect(() => { if (closed && mpp && frame) placeModules(mpp, frame); }, [moduleWmm, moduleHmm, orientation]);
-  const resetAll = () => { setPts([]); setClosed(false); setMpp(null); setFrame(null); setMods([]); setGrid(null); setMode("polygon"); };
+  useEffect(() => {
+    if (closed && mpp && frame && closedPoly) {
+      placeModules(mpp, frame, closedPoly);
+    }
+  }, [closed, mpp, frame, closedPoly, moduleWmm, moduleHmm, orientation]);
+  const resetAll = () => {
+    setPts([]);
+    setClosed(false);
+    setClosedPoly(null);
+    setMpp(null);
+    setFrame(null);
+    setMods([]);
+    setGrid(null);
+    setMode("polygon");
+  };
+
 
   const pxPerM = mpp ? 1 / mpp : 0;
+  const polygonPoints = pts.map(p => `${p.x},${p.y}`).join(" ");
 
-  /** ---------- RENDER ---------- */
   return (
-    <div>
-      <input type="file" accept="image/*" onChange={e => {
-        const f = e.target.files?.[0]; if (!f) return;
-        const r = new FileReader(); r.onload = () => { setImage(r.result as string); resetAll(); }; r.readAsDataURL(f);
-      }} />
+    <div style={{ fontFamily: "Inter, Arial, sans-serif", padding: 16, maxWidth: 960, margin: "0 auto" }}>
+      <h1>PV-Dach-Planer</h1>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={e => {
+          const f = e.target.files?.[0]; if (!f) return;
+          const r = new FileReader();
+          r.onload = () => { setImage(r.result as string); resetAll(); };
+          r.readAsDataURL(f);
+        }}
+      />
 
-      <div style={{ marginTop: 10 }}>
-        <b>Modus:</b> {mode === "polygon" ? "Polygon setzen" : "Module bearbeiten"}<br />
-        <button onClick={handleClose}>Polygon schließen</button>
-        <button onClick={resetAll}>Fläche zurücksetzen</button>
-        <div>
-          <label>Ziegel Traufe:
-            <input value={cntTraufe} onChange={e => setCntTraufe(e.target.value)} />
+      <div style={{ marginTop: 16, display: "grid", gap: 12, gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div><strong>Modus:</strong> {mode === "polygon" ? "Polygon setzen" : "Module bearbeiten"}</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            <button onClick={handleClose} disabled={pts.length < 3}>Polygon schließen</button>
+            <button onClick={resetAll}>Fläche zurücksetzen</button>
+            {mode === "modules" && (
+              <button onClick={() => setMode("polygon")}>Polygon bearbeiten</button>
+            )}
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+            <label>
+              Ziegel Traufe
+              <input value={cntTraufe} onChange={e => setCntTraufe(e.target.value)} style={{ width: "100%" }} />
+            </label>
+            <label>
+              Ziegel Ortgang
+              <input value={cntOrtgang} onChange={e => setCntOrtgang(e.target.value)} style={{ width: "100%" }} />
+            </label>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <label>
+            Modulbreite (mm)
+            <input
+              type="number"
+              min={200}
+              value={moduleWmm}
+              onChange={e => setModuleWmm(Number(e.target.value) || moduleWmm)}
+              style={{ width: "100%" }}
+            />
           </label>
-          <label>Ziegel Ortgang:
-            <input value={cntOrtgang} onChange={e => setCntOrtgang(e.target.value)} />
+          <label>
+            Modulhöhe (mm)
+            <input
+              type="number"
+              min={200}
+              value={moduleHmm}
+              onChange={e => setModuleHmm(Number(e.target.value) || moduleHmm)}
+              style={{ width: "100%" }}
+            />
+          </label>
+          <label>
+            Ausrichtung
+            <select value={orientation} onChange={e => setOrientation(e.target.value as any)} style={{ width: "100%" }}>
+              <option value="vertikal">Vertikal</option>
+              <option value="horizontal">Horizontal</option>
+            </select>
+          </label>
+          <label>
+            Darstellung
+            <select value={moduleStyle} onChange={e => setModuleStyle(e.target.value as any)} style={{ width: "100%" }}>
+              <option value="full">Vollfläche</option>
+              <option value="vertex">Eckpunkte</option>
+            </select>
+          </label>
+          <label>
+            Deckkraft
+            <input type="range" min={0.2} max={1} step={0.05} value={opacity} onChange={e => setOpacity(Number(e.target.value))} />
           </label>
         </div>
-        <div>
-          Modul: {moduleWmm}×{moduleHmm} mm | Rand 35 cm | {grid ? `${grid.nx}×${grid.ny}` : "-"} Module<br />
-          Maßstab: {mpp ? mpp.toFixed(5) : "-"} m/px
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+          <div><strong>Info</strong></div>
+          <div>Modulraster: {grid ? `${grid.nx} × ${grid.ny}` : "-"}</div>
+          <div>Maßstab: {mpp ? `${mpp.toFixed(5)} m/px` : "-"}</div>
+          <div>Pixel pro Meter: {pxPerM ? pxPerM.toFixed(1) : "-"}</div>
+          <div>Anzahl Module aktiv: {mods.filter(m => !m.removed).length}</div>
         </div>
       </div>
 
       {image && (
-        <div style={{ position: "relative", marginTop: 10 }}
-             onMouseMove={onMove} onMouseUp={() => setDrag(null)} onMouseLeave={() => setDrag(null)}>
-          <img ref={imgRef} src={image} alt="roof"
-               style={{ maxWidth: "100%", display: "block", cursor: "crosshair" }}
-               onClick={onImgClick} />
+        <div
+          style={{ position: "relative", marginTop: 20, border: "1px solid #2a2a2a", borderRadius: 8, overflow: "hidden" }}
+          onMouseMove={onMove}
+          onMouseUp={() => setDrag(null)}
+          onMouseLeave={() => setDrag(null)}
+        >
+          <img
+            ref={imgRef}
+            src={image}
+            alt="Dach"
+            style={{ width: "100%", display: "block", cursor: mode === "modules" ? "pointer" : "crosshair" }}
+            onClick={onImgClick}
+          />
           <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
             <defs>
               <pattern id="fullb" width="100" height="100" patternUnits="userSpaceOnUse">
                 <rect x="0" y="0" width="100" height="100" fill="#0b0b0b" />
-                <path d="M0 50 H100 M50 0 V100" stroke="#111" strokeWidth="2" />
-                <rect x="0" y="0" width="100" height="100" fill="none" stroke="#161616" strokeWidth="4" />
+                <path d="M0 50 H100 M50 0 V100" stroke="#111" strokeWidth={2} />
+                <rect x="0" y="0" width="100" height="100" fill="none" stroke="#161616" strokeWidth={4} />
               </pattern>
             </defs>
+
+            {pts.length >= 2 && (
+              <polyline
+                points={polygonPoints}
+                fill={closed ? "rgba(0, 102, 204, 0.1)" : "none"}
+                stroke="#0f62fe"
+                strokeDasharray={closed ? undefined : "6 4"}
+                strokeWidth={2}
+              />
+            )}
+            {closed && pts.length >= 3 && (
+              <polygon points={polygonPoints} fill="rgba(15, 98, 254, 0.12)" stroke="none" />
+            )}
 
             {frame && mods.map(m => {
               if (m.removed) return null;
               const poly = uvRectToPoly(m, frame);
               const ptsS = poly.map(p => `${p.x},${p.y}`).join(" ");
-              return moduleStyle === "full"
-                ? <polygon key={m.id} points={ptsS} fill="url(#fullb)" opacity={opacity} stroke="#111" strokeWidth={0.6} />
-                : (() => {
-                  const cx = (poly[0].x + poly[2].x) / 2, cy = (poly[0
+              if (moduleStyle === "full") {
+                return (
+                  <polygon
+                    key={m.id}
+                    points={ptsS}
+                    fill="url(#fullb)"
+                    opacity={opacity}
+                    stroke="#111"
+                    strokeWidth={0.6}
+                  />
+                );
+              }
+              const cx = (poly[0].x + poly[2].x) / 2;
+              const cy = (poly[0].y + poly[2].y) / 2;
+              return (
+                <g key={m.id} opacity={opacity}>
+                  <polygon points={ptsS} fill="none" stroke="#f2f4f8" strokeDasharray="4 4" strokeWidth={0.8} />
+                  <circle cx={cx} cy={cy} r={3.2} fill="#f2f4f8" />
+                </g>
+              );
+            })}
+
+            {pts.map((p, i) => (
+              <g key={`pt-${i}`}>
+                <circle cx={p.x} cy={p.y} r={6} fill="#ffffff" stroke="#0f62fe" strokeWidth={2} opacity={0.85} />
+                <circle
+                  cx={p.x}
+                  cy={p.y}
+                  r={10}
+                  fill="transparent"
+                  style={{ pointerEvents: "all", cursor: "grab" }}
+                  onMouseDown={e => {
+                    e.preventDefault();
+                    setDrag(i);
+                  }}
+                />
+              </g>
+            ))}
+
+            {closed && frame && (
+              <text x={frame[0].x} y={frame[0].y - 8} fill="#fff" fontSize={12}>
+                {grid ? `${grid.nx * grid.ny} Module` : ""}
+              </text>
+            )}
+          </svg>
+        </div>
+      )}
+    </div>
+  );
+}
