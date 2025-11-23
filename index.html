@@ -42,18 +42,7 @@
       </div>
 
       <div class="control-group">
-        <strong>Modulraster (176,5 × 113,4 cm)</strong>
-        <label>
-          Ausrichtung:
-          <select id="modOrientation">
-            <option value="vertikal">vertikal</option>
-            <option value="horizontal">horizontal</option>
-          </select>
-        </label>
-        <label>
-          Rand (cm):
-          <input type="number" id="modMarginCm" value="30" min="0" />
-        </label>
+        <strong>Module</strong>
         <label>
           Transparenz:
           <input type="range" id="modOpacity" min="0.1" max="1" step="0.05" value="0.6" />
@@ -69,18 +58,17 @@
     </div>
 
     <p class="hint">
-      <strong>Punkt-Reihenfolge für Referenz:</strong><br />
-      1. Punkt = unten links Traufe, 2. Punkt = unten rechts Traufe (Ortgang unten rechts),
-      3. Punkt = Ortgang oben rechts.<br />
-      Weitere Punkte dann im Verlauf der Dachfläche setzen. Wenn du den letzten Punkt wieder
-      auf den ersten Punkt setzt (Klick in die Nähe), wird das Polygon automatisch geschlossen.
-      <br /><br />
-      Schritt 1: Bild wählen, Punkte in dieser Reihenfolge setzen. Jeder Klick setzt einen roten Punkt, Linien
-      verbinden die Punkte.<br />
-      Schritt 2: Dachhaut & Ziegelanzahl Traufe/Ortgang eintragen. Die Längen und die Dachfläche werden
-      berechnet.<br />
-      Schritt 3: „Module einzeichnen“: Module (176,5 × 113,4 cm, Fuge 2 cm) werden perspektivisch
-      in die markierte Fläche gelegt. Module einzeln durch Anklicken löschen, „Module löschen“ entfernt alle.
+      <strong>Punkt-Reihenfolge und Polygon schließen</strong><br />
+      1. Punkt = unten links Traufe<br />
+      2. Punkt = unten rechts Traufe (gleichzeitig unten Ortgang rechts)<br />
+      3. Punkt = Ortgang oben rechts<br />
+      Weitere Punkte entlang der Dachfläche setzen.<br />
+      Wenn du mit einem Klick in der Nähe des ersten Punktes schließt, wird das Polygon
+      automatisch geschlossen (letzte Kante zurück zum ersten Punkt). Dann stehen Referenzlängen
+      und Fläche fest.<br /><br />
+      Nach dem Einzeichnen der Module kannst du die Modulfläche über drei Eckpunkte
+      (kleine Kreise) ziehen; die Module werden in diese Fläche affine „perspektivisch“
+      eingepasst.
     </p>
 
     <script src="script.js"></script>
