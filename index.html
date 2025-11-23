@@ -20,6 +20,28 @@
       </div>
 
       <div class="control-group">
+        <strong>Referenz / Dachhaut</strong>
+        <label>
+          Dachhaut:
+          <select id="roofType">
+            <option value="">Bitte wählen…</option>
+            <option value="einfalz">Einfalzziegel 21,5 × 33 cm</option>
+            <option value="doppelfalz">Doppelfalzziegel / Betonstein 30 × 33 cm</option>
+            <option value="jumbo">Jumbo 25 × 36 cm</option>
+          </select>
+        </label>
+        <label>
+          Ziegel Traufe (Anzahl):
+          <input type="number" id="tilesTraufe" min="1" />
+        </label>
+        <label>
+          Ziegel Ortgang (Anzahl):
+          <input type="number" id="tilesOrtgang" min="1" />
+        </label>
+        <span id="measureInfo"></span>
+      </div>
+
+      <div class="control-group">
         <strong>Modulraster</strong>
         <label>
           Breite (px):
@@ -62,9 +84,15 @@
     </div>
 
     <p class="hint">
-      Schritt 1: Bild wählen, dann in die Dachfläche klicken. Jeder Klick setzt einen roten Punkt, Linien
-      verbinden die Punkte. <br />
-      Schritt 2: Modulparameter setzen und „Module einzeichnen“ drücken. Module können einzeln durch Anklicken
+      <strong>Punkt-Reihenfolge für Referenz:</strong><br />
+      1. Punkt = unten links Traufe, 2. Punkt = unten rechts Traufe (Ortgang unten rechts),
+      3. Punkt = Ortgang oben rechts. Weitere Punkte dann im Verlauf der Dachfläche setzen.
+      <br /><br />
+      Schritt 1: Bild wählen, Punkte in dieser Reihenfolge setzen. Jeder Klick setzt einen roten Punkt, Linien
+      verbinden die Punkte.<br />
+      Schritt 2: Dachhaut & Ziegelanzahl Traufe/Ortgang eintragen. Die Längen und die Dachfläche werden
+      berechnet.<br />
+      Schritt 3: Modulparameter setzen und „Module einzeichnen“ drücken. Module können einzeln durch Anklicken
       entfernt werden.
     </p>
 
