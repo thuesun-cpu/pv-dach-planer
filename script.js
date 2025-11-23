@@ -1,468 +1,509 @@
-// --- Konstanten ------------------------------------------------------------
-
-// Dachziegel-Maße in Metern (Breite = Traufe, Höhe = Ortgang)
-const TILE_SPECS = {
-  einfalz: { w: 0.215, h: 0.33 },
-  doppelpfalz: { w: 0.30, h: 0.33 },
-  jumbo: { w: 0.25, h: 0.36 }
-};
-
-// PV-Modulmaße in Metern
-// vertikal: 1,765 m hoch, 1,134 m breit
-const MODULE_SPECS = {
-  vertical: { width: 1.134, height: 1.765 },
-  horizontal: { width: 1.765, height: 1.134 }
-};
-
-const EDGE_MARGIN_M = 0.30; // 30 cm Rand
-const GAP_M = 0.02;         // 2 cm Fuge
-
-// --- Canvas / Zustand ------------------------------------------------------
+// --- Grund-Setup -----------------------------------------------------------
 
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-let image = null;
-
-// Polygon-Dachfläche
-let polygon = [];           // [{x,y}, …]
-let polygonClosed = false;
-
-// Generatorfläche (4 Punkte, im Uhrzeigersinn: unten links, unten rechts, oben rechts, oben links)
-let generator = [];         // [{x,y}, …]
-
-// Dragging-Status
-let dragState = null;       // { type: 'polygon'|'generator', index: number }
-
-// Skalen & Maße
-let traufePx = 0;
-let ortgangPx = 0;
-let traufeM = 0;
-let ortgangM = 0;
-let areaRoofM2 = 0;
-
-// Modul-Raster
-let moduleCols = 0;
-let moduleRows = 0;
-let generatorAreaM2 = 0;
-
-// --- UI-Elemente -----------------------------------------------------------
-
 const fileInput = document.getElementById("fileInput");
 const resetPolygonBtn = document.getElementById("resetPolygonBtn");
 const pointInfo = document.getElementById("pointInfo");
-const measureInfo = document.getElementById("measureInfo");
-const moduleInfo = document.getElementById("moduleInfo");
 
 const roofTypeSelect = document.getElementById("roofType");
-const tilesTraufeInput = document.getElementById("tilesTraufe");
-const tilesOrtgangInput = document.getElementById("tilesOrtgang");
+const tilesEaveInput = document.getElementById("tilesEave");
+const tilesGableInput = document.getElementById("tilesGable");
+const measureInfo = document.getElementById("measureInfo");
 
-const moduleOrientationSelect = document.getElementById("moduleOrientation");
+const orientationSelect = document.getElementById("orientation");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
 const drawModulesBtn = document.getElementById("drawModulesBtn");
 const clearModulesBtn = document.getElementById("clearModulesBtn");
+const moduleInfo = document.getElementById("moduleInfo");
 
-// --- Hilfsfunktionen -------------------------------------------------------
+// Bild
+let roofImage = null;
+
+// Polygon (Dachfläche)
+let points = [];          // [{x,y}, ...]
+let isClosed = false;
+let draggingPointIndex = -1;
+
+// Maßstab
+let scaleReady = false;
+let metersPerPixelX = 0;
+let metersPerPixelY = 0;
+
+// Generatorfläche / Module
+const MODULE_WIDTH_M = 1.134;   // Breite in m (vertikale Ausrichtung)
+const MODULE_HEIGHT_M = 1.765;  // Höhe in m (vertikale Ausrichtung)
+const GAP_M = 0.02;
+const EDGE_M = 0.30;
+
+let generatorHandles = null;    // [{x,y} * 4] Reihenfolge: unten links, unten rechts, oben rechts, oben links
+let modules = [];               // Array von Modulen: [{corners:[{x,y}*4]}]
+let draggingHandleIndex = -1;
+
+// Dachhaut-Daten (Meter pro Ziegel)
+const TILE_TYPES = {
+    einfalz:  { w: 0.215, h: 0.33 },
+    doppelfalz: { w: 0.30,  h: 0.33 },
+    jumbo:   { w: 0.25,  h: 0.36 }
+};
+
+// --- Event-Handler --------------------------------------------------------
+
+// Bild wählen
+fileInput.addEventListener("change", handleImageChange);
+
+// Polygon zurücksetzen
+resetPolygonBtn.addEventListener("click", () => {
+    points = [];
+    isClosed = false;
+    draggingPointIndex = -1;
+    scaleReady = false;
+    metersPerPixelX = 0;
+    metersPerPixelY = 0;
+    generatorHandles = null;
+    modules = [];
+    clearModulesBtn.disabled = true;
+    updatePointInfo();
+    updateMeasureInfo();
+    draw();
+});
+
+// Eingegebene Referenzwerte -> Maßstab neu berechnen
+roofTypeSelect.addEventListener("change", recalcScaleIfPossible);
+tilesEaveInput.addEventListener("change", recalcScaleIfPossible);
+tilesGableInput.addEventListener("change", recalcScaleIfPossible);
+
+// Module einzeichnen / löschen
+drawModulesBtn.addEventListener("click", () => {
+    if (!scaleReady || !isClosed) {
+        alert("Bitte zuerst Dachfläche schließen und Referenz (Dachhaut + Ziegelanzahlen) eingeben.");
+        return;
+    }
+    createGeneratorAndModules();
+    clearModulesBtn.disabled = false;
+    draw();
+});
+
+clearModulesBtn.addEventListener("click", () => {
+    generatorHandles = null;
+    modules = [];
+    clearModulesBtn.disabled = true;
+    draw();
+});
+
+// Canvas Interaktion
+canvas.addEventListener("mousedown", onMouseDown);
+canvas.addEventListener("mousemove", onMouseMove);
+canvas.addEventListener("mouseup", onMouseUp);
+canvas.addEventListener("mouseleave", onMouseUp);
+
+// --- Bild laden -----------------------------------------------------------
+
+function handleImageChange(event) {
+    const file = event.target.files && event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = e => {
+        const img = new Image();
+        img.onload = () => {
+            roofImage = img;
+
+            // Canvas auf Bildgröße begrenzen (max 1200×600) und Bild passend skalieren
+            let scale = Math.min(
+                canvas.width / img.width,
+                canvas.height / img.height
+            );
+            // kein globales scaling merken – wir zeichnen immer zentriert
+            roofImage.scale = scale;
+            draw();
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+// --- Polygon-Interaktion --------------------------------------------------
 
 function getMousePos(evt) {
-  const rect = canvas.getBoundingClientRect();
-  return {
-    x: evt.clientX - rect.left,
-    y: evt.clientY - rect.top
-  };
+    const rect = canvas.getBoundingClientRect();
+    return {
+        x: (evt.clientX - rect.left) * (canvas.width / rect.width),
+        y: (evt.clientY - rect.top) * (canvas.height / rect.height)
+    };
 }
 
-function dist(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.hypot(dx, dy);
+function onMouseDown(evt) {
+    const pos = getMousePos(evt);
+
+    // zuerst prüfen: Generator-Handle ziehen?
+    if (generatorHandles) {
+        const idx = findHandleIndex(pos, generatorHandles, 8);
+        if (idx !== -1) {
+            draggingHandleIndex = idx;
+            return;
+        }
+    }
+
+    // ansonsten: Polygon-Punkt ziehen oder neuen Punkt setzen
+    const idx = findHandleIndex(pos, points, 8);
+    if (idx !== -1) {
+        draggingPointIndex = idx;
+        return;
+    }
+
+    // neuer Punkt nur, wenn Polygon noch nicht geschlossen
+    if (!isClosed) {
+        points.push(pos);
+        updatePointInfo();
+
+        // Prüfen, ob letzter Punkt nahe genug am ersten ist -> Polygon schließen
+        if (points.length >= 3) {
+            const first = points[0];
+            const dist = distance(pos, first);
+            if (dist < 15) {
+                // letzten Punkt auf den ersten schnappen lassen
+                points[points.length - 1] = { x: first.x, y: first.y };
+                isClosed = true;
+                recalcScaleIfPossible();
+            }
+        }
+        draw();
+    }
 }
 
-function polygonArea(points) {
-  if (points.length < 3) return 0;
-  let sum = 0;
-  for (let i = 0; i < points.length; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % points.length];
-    sum += p1.x * p2.y - p2.x * p1.y;
-  }
-  return Math.abs(sum) / 2;
+function onMouseMove(evt) {
+    const pos = getMousePos(evt);
+
+    if (draggingPointIndex !== -1) {
+        points[draggingPointIndex] = pos;
+        draw();
+        recalcScaleIfPossible();
+        return;
+    }
+
+    if (draggingHandleIndex !== -1 && generatorHandles) {
+        generatorHandles[draggingHandleIndex] = pos;
+        recomputeModules();
+        draw();
+    }
 }
 
-function findNearbyPoint(list, pos, radius) {
-  for (let i = 0; i < list.length; i++) {
-    if (dist(list[i], pos) <= radius) return i;
-  }
-  return -1;
+function onMouseUp() {
+    draggingPointIndex = -1;
+    draggingHandleIndex = -1;
 }
 
-function lerp(a, b, t) {
-  return {
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t
-  };
+function findHandleIndex(pos, arr, radius) {
+    for (let i = 0; i < arr.length; i++) {
+        if (distance(pos, arr[i]) <= radius) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+// --- Maßstab & Flächenberechnung -----------------------------------------
+
+function recalcScaleIfPossible() {
+    if (!isClosed) {
+        scaleReady = false;
+        updateMeasureInfo();
+        return;
+    }
+    const type = roofTypeSelect.value;
+    const tileSpec = TILE_TYPES[type];
+    const tilesEave = Number(tilesEaveInput.value);
+    const tilesGable = Number(tilesGableInput.value);
+
+    if (!tileSpec || !tilesEave || !tilesGable) {
+        scaleReady = false;
+        updateMeasureInfo();
+        return;
+    }
+
+    // Annahme:
+    // Punkt 0 -> unten links
+    // Punkt 1 -> unten rechts (Traufe)
+    // letzter Punkt -> oben links (Ortgang)
+    const p0 = points[0];
+    const p1 = points[1];
+    const pLast = points[points.length - 2]; // vorletzter ist i.d.R. oben links
+
+    const pixelEave = distance(p0, p1);
+    const pixelGable = distance(p0, pLast);
+
+    const meterEave = tilesEave * tileSpec.w;
+    const meterGable = tilesGable * tileSpec.h;
+
+    metersPerPixelX = meterEave / pixelEave;
+    metersPerPixelY = meterGable / pixelGable;
+
+    const area = meterEave * meterGable;
+
+    scaleReady = true;
+    updateMeasureInfo(meterEave, meterGable, area);
+}
+
+function updateMeasureInfo(mEave, mGable, area) {
+    if (!scaleReady || mEave === undefined) {
+        measureInfo.textContent = "Traufe: – m, Ortgang: – m, Fläche: – m²";
+        return;
+    }
+    measureInfo.textContent =
+        `Traufe: ${mEave.toFixed(2)} m, Ortgang: ${mGable.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
+}
+
+// --- Generatorfläche & Module ---------------------------------------------
+
+function createGeneratorAndModules() {
+    // Start-Generator als rechteckige Fläche in der Mitte des Polygons (grobe Annahme)
+
+    // einfache Bounding-Box des Polygons
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of points) {
+        minX = Math.min(minX, p.x);
+        maxX = Math.max(maxX, p.x);
+        minY = Math.min(minY, p.y);
+        maxY = Math.max(maxY, p.y);
+    }
+
+    const marginPxX = EDGE_M / metersPerPixelX;
+    const marginPxY = EDGE_M / metersPerPixelY;
+
+    minX += marginPxX;
+    maxX -= marginPxX;
+    minY += marginPxY;
+    maxY -= marginPxY;
+
+    const pBL = { x: minX, y: maxY }; // bottom left
+    const pBR = { x: maxX, y: maxY }; // bottom right
+    const pTR = { x: maxX, y: minY }; // top right
+    const pTL = { x: minX, y: minY }; // top left
+
+    generatorHandles = [pBL, pBR, pTR, pTL];
+    recomputeModules();
+}
+
+function recomputeModules() {
+    if (!generatorHandles) return;
+
+    const [pBL, pBR, pTR, pTL] = generatorHandles;
+
+    // Längen der Ränder in Pixel
+    const lenBottomPx = distance(pBL, pBR);
+    const lenLeftPx = distance(pBL, pTL);
+
+    const lenBottomM = lenBottomPx * metersPerPixelX;
+    const lenLeftM = lenLeftPx * metersPerPixelY;
+
+    // Modulmaße je nach Ausrichtung
+    const orientation = orientationSelect.value;
+    let modW = MODULE_WIDTH_M;
+    let modH = MODULE_HEIGHT_M;
+    if (orientation === "horizontal") {
+        [modW, modH] = [modH, modW];
+    }
+
+    const effBottomM = lenBottomM - 2 * EDGE_M;
+    const effLeftM = lenLeftM - 2 * EDGE_M;
+
+    const cellW = modW + GAP_M;
+    const cellH = modH + GAP_M;
+
+    const countX = Math.max(0, Math.floor((effBottomM + GAP_M) / cellW));
+    const countY = Math.max(0, Math.floor((effLeftM + GAP_M) / cellH));
+
+    modules = [];
+
+    if (countX === 0 || countY === 0) {
+        moduleInfo.textContent =
+            "Keine Module passen in die aktuelle Generatorfläche (zu klein bei gewählten Parametern).";
+        return;
+    }
+
+    moduleInfo.textContent =
+        `Module: ${countX} × ${countY} = ${countX * countY} Stück`;
+
+    // Wir parametrisieren die Generatorfläche in s (0..1, horizontal) und t (0..1, vertikal)
+    // Eckpunkte in Reihenfolge BL, BR, TR, TL
+
+    function lerpHandle(s, t) {
+        // bilineare Interpolation
+        const x =
+            pBL.x * (1 - s) * (1 - t) +
+            pBR.x * s * (1 - t) +
+            pTR.x * s * t +
+            pTL.x * (1 - s) * t;
+        const y =
+            pBL.y * (1 - s) * (1 - t) +
+            pBR.y * s * (1 - t) +
+            pTR.y * s * t +
+            pTL.y * (1 - s) * t;
+        return { x, y };
+    }
+
+    const totalGridW = countX * cellW - GAP_M;
+    const totalGridH = countY * cellH - GAP_M;
+
+    for (let iy = 0; iy < countY; iy++) {
+        for (let ix = 0; ix < countX; ix++) {
+            // Meterposition der Modul-Ecken (ohne Randabstand, der steckt im Generator)
+            const xStartM = EDGE_M + ix * cellW;
+            const yStartM = EDGE_M + iy * cellH;
+
+            const xEndM = xStartM + modW;
+            const yEndM = yStartM + modH;
+
+            const s0 = xStartM / (totalGridW + 2 * EDGE_M - GAP_M);
+            const s1 = xEndM / (totalGridW + 2 * EDGE_M - GAP_M);
+            const t0 = yStartM / (totalGridH + 2 * EDGE_M - GAP_M);
+            const t1 = yEndM / (totalGridH + 2 * EDGE_M - GAP_M);
+
+            const c0 = lerpHandle(s0, t1); // unten links
+            const c1 = lerpHandle(s1, t1); // unten rechts
+            const c2 = lerpHandle(s1, t0); // oben rechts
+            const c3 = lerpHandle(s0, t0); // oben links
+
+            modules.push({ corners: [c0, c1, c2, c3] });
+        }
+    }
 }
 
 // --- Zeichnen --------------------------------------------------------------
 
-function redraw() {
-  if (!canvas.width || !canvas.height) return;
+function drawBackground() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
 
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (roofImage) {
+        const img = roofImage;
+        const scale = img.scale || 1;
 
-  if (image) {
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  }
+        const drawWidth = img.width * scale;
+        const drawHeight = img.height * scale;
 
-  // Polygon
-  if (polygon.length > 0) {
+        const x = (canvas.width - drawWidth) / 2;
+        const y = (canvas.height - drawHeight) / 2;
+
+        ctx.drawImage(img, x, y, drawWidth, drawHeight);
+    } else {
+        ctx.fillStyle = "#999";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    ctx.restore();
+}
+
+function drawPolygon() {
+    if (points.length === 0) return;
+
+    ctx.save();
     ctx.lineWidth = 2;
-    ctx.strokeStyle = "red";
-    ctx.fillStyle = "rgba(120,120,120,0.35)";
 
+    // Fläche
+    if (isClosed) {
+        ctx.beginPath();
+        ctx.moveTo(points[0].x, points[0].y);
+        for (let i = 1; i < points.length; i++) {
+            ctx.lineTo(points[i].x, points[i].y);
+        }
+        ctx.closePath();
+        ctx.fillStyle = "rgba(255,0,0,0.2)";
+        ctx.fill();
+    }
+
+    // Linien
     ctx.beginPath();
-    ctx.moveTo(polygon[0].x, polygon[0].y);
-    for (let i = 1; i < polygon.length; i++) {
-      ctx.lineTo(polygon[i].x, polygon[i].y);
+    ctx.moveTo(points[0].x, points[0].y);
+    for (let i = 1; i < points.length; i++) {
+        ctx.lineTo(points[i].x, points[i].y);
     }
-    if (polygonClosed) {
-      ctx.closePath();
-      ctx.fill();
-    }
+    if (isClosed) ctx.closePath();
+    ctx.strokeStyle = "red";
     ctx.stroke();
 
     // Punkte
-    ctx.fillStyle = "turquoise";
-    for (const p of polygon) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-      ctx.fill();
+    for (const p of points) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+        ctx.fillStyle = "red";
+        ctx.fill();
+        ctx.strokeStyle = "#fff";
+        ctx.stroke();
     }
-  }
 
-  // Generatorfläche + Modulraster
-  if (generator.length === 4 && moduleCols > 0 && moduleRows > 0) {
-    const opacity = parseFloat(moduleOpacityInput.value || "0.6");
+    ctx.restore();
+}
 
-    // Generatorfläche (Hintergrund)
-    ctx.fillStyle = `rgba(60,60,60,${opacity})`;
+function drawGenerator() {
+    if (!generatorHandles) return;
+
+    const alpha = Number(moduleOpacityInput.value);
+
+    // Generatorrahmen
+    ctx.save();
     ctx.beginPath();
-    ctx.moveTo(generator[0].x, generator[0].y);
-    for (let i = 1; i < 4; i++) {
-      ctx.lineTo(generator[i].x, generator[i].y);
+    ctx.moveTo(generatorHandles[0].x, generatorHandles[0].y);
+    for (let i = 1; i < generatorHandles.length; i++) {
+        ctx.lineTo(generatorHandles[i].x, generatorHandles[i].y);
     }
     ctx.closePath();
-    ctx.fill();
+    ctx.strokeStyle = "cyan";
+    ctx.lineWidth = 2;
+    ctx.stroke();
 
-    // Modulraster (Linien)
+    // Handles
+    for (const h of generatorHandles) {
+        ctx.beginPath();
+        ctx.arc(h.x, h.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = "cyan";
+        ctx.fill();
+        ctx.strokeStyle = "#003";
+        ctx.stroke();
+    }
+
+    // Module
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "rgba(80,80,80,1)";
     ctx.strokeStyle = "white";
     ctx.lineWidth = 1;
 
-    const bl = generator[0];
-    const br = generator[1];
-    const tr = generator[2];
-    const tl = generator[3];
-
-    // vertikale Linien (Spalten)
-    for (let c = 0; c <= moduleCols; c++) {
-      const u = c / moduleCols;
-      const bottom = lerp(bl, br, u);
-      const top = lerp(tl, tr, u);
-      ctx.beginPath();
-      ctx.moveTo(bottom.x, bottom.y);
-      ctx.lineTo(top.x, top.y);
-      ctx.stroke();
+    for (const m of modules) {
+        const c = m.corners;
+        ctx.beginPath();
+        ctx.moveTo(c[0].x, c[0].y);
+        ctx.lineTo(c[1].x, c[1].y);
+        ctx.lineTo(c[2].x, c[2].y);
+        ctx.lineTo(c[3].x, c[3].y);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
     }
 
-    // horizontale Linien (Zeilen)
-    for (let r = 0; r <= moduleRows; r++) {
-      const v = r / moduleRows;
-      const left = lerp(bl, tl, v);
-      const right = lerp(br, tr, v);
-      ctx.beginPath();
-      ctx.moveTo(left.x, left.y);
-      ctx.lineTo(right.x, right.y);
-      ctx.stroke();
-    }
-
-    // Generator-Eckpunkte zeichnen
-    ctx.fillStyle = "deepskyblue";
-    for (const p of generator) {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+    ctx.restore();
 }
 
-// --- Berechnungen ----------------------------------------------------------
-
-function updateMeasurements() {
-  const roofType = roofTypeSelect.value;
-  const tilesTraufe = parseFloat(tilesTraufeInput.value);
-  const tilesOrtgang = parseFloat(tilesOrtgangInput.value);
-
-  traufeM = 0;
-  ortgangM = 0;
-  traufePx = 0;
-  ortgangPx = 0;
-  areaRoofM2 = 0;
-
-  if (!roofType || !TILE_SPECS[roofType]) {
-    measureInfo.textContent = "";
-    return;
-  }
-  const spec = TILE_SPECS[roofType];
-
-  if (!polygonClosed || polygon.length < 3) {
-    measureInfo.textContent =
-      "  (Dachfläche noch nicht vollständig gesetzt)";
-    return;
-  }
-
-  if (!Number.isFinite(tilesTraufe) || !Number.isFinite(tilesOrtgang)) {
-    measureInfo.textContent = "  (Ziegel-Anzahlen fehlen)";
-    return;
-  }
-
-  // Annahme entsprechend deiner Zeichensequenz:
-  // P0 = Traufe links, P1 = Traufe rechts, P2 = Ortgang rechts oben
-  const p0 = polygon[0];
-  const p1 = polygon[1];
-  const p2 = polygon[2];
-
-  traufePx = dist(p0, p1);
-  ortgangPx = dist(p1, p2);
-
-  traufeM = tilesTraufe * spec.w;
-  ortgangM = tilesOrtgang * spec.h;
-
-  if (traufePx <= 0 || ortgangPx <= 0) {
-    measureInfo.textContent = "  (Referenzkanten unklar)";
-    return;
-  }
-
-  const scaleX = traufeM / traufePx; // m/px
-  const scaleY = ortgangM / ortgangPx; // m/px
-
-  const areaPx2 = polygonArea(polygon);
-  areaRoofM2 = areaPx2 * scaleX * scaleY;
-
-  measureInfo.textContent =
-    `  Traufe: ${traufeM.toFixed(2)} m, ` +
-    `Ortgang: ${ortgangM.toFixed(2)} m, ` +
-    `Fläche: ${areaRoofM2.toFixed(2)} m²`;
-
-  // nach Referenz-Update auch Modulraster neu berechnen
-  updateModuleLayout();
+function draw() {
+    drawBackground();
+    drawPolygon();
+    drawGenerator();
 }
 
-function updateModuleLayout() {
-  moduleCols = 0;
-  moduleRows = 0;
-  generatorAreaM2 = 0;
-
-  if (!polygonClosed || polygon.length < 3 || traufeM <= 0 || ortgangM <= 0) {
-    moduleInfo.textContent = "";
-    redraw();
-    return;
-  }
-
-  const ori = moduleOrientationSelect.value || "vertical";
-  const mSpec = MODULE_SPECS[ori];
-
-  const availW = Math.max(0, traufeM - 2 * EDGE_MARGIN_M);
-  const availH = Math.max(0, ortgangM - 2 * EDGE_MARGIN_M);
-
-  if (availW <= 0 || availH <= 0) {
-    moduleInfo.textContent = "  (zu wenig Platz für Randabstand 30 cm)";
-    redraw();
-    return;
-  }
-
-  const stepW = mSpec.width + GAP_M;
-  const stepH = mSpec.height + GAP_M;
-
-  let cols = Math.floor((availW + GAP_M) / stepW);
-  let rows = Math.floor((availH + GAP_M) / stepH);
-
-  if (cols < 1 || rows < 1) {
-    moduleInfo.textContent =
-      "  (Module passen mit Rand & Fuge nicht auf diese Fläche)";
-    redraw();
-    return;
-  }
-
-  moduleCols = cols;
-  moduleRows = rows;
-
-  // Netto-Modulfläche (ohne Fugen)
-  generatorAreaM2 = cols * rows * mSpec.width * mSpec.height;
-
-  const totalW = cols * mSpec.width + (cols - 1) * GAP_M;
-  const totalH = rows * mSpec.height + (rows - 1) * GAP_M;
-
-  moduleInfo.textContent =
-    `  Module: ${cols} × ${rows} = ${cols * rows} Stück, ` +
-    `Generatorfläche (Module): ${generatorAreaM2.toFixed(2)} m², ` +
-    `Raster ca. ${totalW.toFixed(2)} m × ${totalH.toFixed(2)} m inkl. Fugen`;
-
-  redraw();
+function updatePointInfo() {
+    pointInfo.textContent = `Punkte: ${points.length}`;
 }
 
-// --- Generatorfläche initial aus Polygon ableiten --------------------------
+// --- Hilfsfunktionen ------------------------------------------------------
 
-function initGeneratorFromPolygon() {
-  if (!polygonClosed || polygon.length < 3) return;
-
-  // Annahme: P0 = unten links, P1 = unten rechts, P2 = oben rechts, P3 = oben links
-  const p0 = polygon[0];
-  const p1 = polygon[1];
-  const p2 = polygon[2];
-  const p3 = polygon[3] || {
-    x: polygon[0].x + (polygon[3] ? 0 : (polygon[0].x - polygon[1].x)),
-    y: polygon[2].y
-  };
-
-  generator = [ { ...p0 }, { ...p1 }, { ...p2 }, { ...p3 } ];
+function distance(a, b) {
+    const dx = a.x - b.x;
+    const dy = a.y - b.y;
+    return Math.sqrt(dx * dx + dy * dy);
 }
 
-// --- Event-Handler ---------------------------------------------------------
-
-fileInput.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    image = new Image();
-    image.onload = () => {
-      canvas.width = image.width;
-      canvas.height = image.height;
-      polygon = [];
-      polygonClosed = false;
-      generator = [];
-      pointInfo.textContent = "";
-      measureInfo.textContent = "";
-      moduleInfo.textContent = "";
-      redraw();
-    };
-    image.src = ev.target.result;
-  };
-  reader.readAsDataURL(file);
-});
-
-resetPolygonBtn.addEventListener("click", () => {
-  polygon = [];
-  polygonClosed = false;
-  generator = [];
-  traufeM = 0;
-  ortgangM = 0;
-  areaRoofM2 = 0;
-  moduleCols = 0;
-  moduleRows = 0;
-  generatorAreaM2 = 0;
-  pointInfo.textContent = "";
-  measureInfo.textContent = "";
-  moduleInfo.textContent = "";
-  clearModulesBtn.disabled = true;
-  redraw();
-});
-
-roofTypeSelect.addEventListener("change", updateMeasurements);
-tilesTraufeInput.addEventListener("input", updateMeasurements);
-tilesOrtgangInput.addEventListener("input", updateMeasurements);
-
-moduleOrientationSelect.addEventListener("change", () => {
-  updateModuleLayout();
-});
-moduleOpacityInput.addEventListener("input", redraw);
-
-drawModulesBtn.addEventListener("click", () => {
-  if (!polygonClosed || polygon.length < 3) {
-    alert("Bitte zuerst die Dachfläche vollständig markieren.");
-    return;
-  }
-  updateMeasurements();
-  if (moduleCols === 0 || moduleRows === 0) {
-    alert("Mit den aktuellen Referenzwerten passen keine Module auf diese Fläche.");
-    return;
-  }
-
-  if (generator.length !== 4) {
-    initGeneratorFromPolygon();
-  }
-
-  clearModulesBtn.disabled = false;
-  redraw();
-});
-
-clearModulesBtn.addEventListener("click", () => {
-  generator = [];
-  moduleCols = 0;
-  moduleRows = 0;
-  generatorAreaM2 = 0;
-  moduleInfo.textContent = "";
-  clearModulesBtn.disabled = true;
-  redraw();
-});
-
-// Canvas-Maussteuerung
-canvas.addEventListener("mousedown", (e) => {
-  const pos = getMousePos(e);
-
-  // 1. Generator-Eckpunkte zuerst prüfen
-  if (generator.length === 4) {
-    const gi = findNearbyPoint(generator, pos, 10);
-    if (gi !== -1) {
-      dragState = { type: "generator", index: gi };
-      return;
-    }
-  }
-
-  // 2. Polygon-Punkte prüfen
-  const pi = findNearbyPoint(polygon, pos, 8);
-  if (pi !== -1) {
-    dragState = { type: "polygon", index: pi };
-    return;
-  }
-
-  // 3. Polygon setzen / schließen
-  if (!polygonClosed) {
-    if (polygon.length >= 3 && dist(pos, polygon[0]) < 10) {
-      polygonClosed = true;
-      pointInfo.textContent = `Punkte: ${polygon.length}`;
-      updateMeasurements();
-      redraw();
-    } else {
-      polygon.push(pos);
-      pointInfo.textContent = `Punkte: ${polygon.length}`;
-      redraw();
-    }
-  }
-});
-
-canvas.addEventListener("mousemove", (e) => {
-  if (!dragState) return;
-  const pos = getMousePos(e);
-
-  if (dragState.type === "polygon") {
-    polygon[dragState.index] = pos;
-    if (polygonClosed) updateMeasurements();
-  } else if (dragState.type === "generator") {
-    generator[dragState.index] = pos;
-  }
-  redraw();
-});
-
-canvas.addEventListener("mouseup", () => {
-  dragState = null;
-});
-
-canvas.addEventListener("mouseleave", () => {
-  dragState = null;
-});
-
-// Initial
-redraw();
+// Initialer Draw
+draw();
+updatePointInfo();
+updateMeasureInfo();
