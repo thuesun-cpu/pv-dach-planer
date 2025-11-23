@@ -1,62 +1,57 @@
 body {
+  margin: 0;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  margin: 16px;
+  background: #f3f3f3;
 }
 
 h1 {
+  margin: 10px 10px 0 10px;
   font-size: 20px;
-  margin-bottom: 12px;
 }
 
 .controls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
-  max-width: 900px;
+  margin: 5px 10px 10px 10px;
+  padding: 8px;
+  background: #ffffff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
 }
 
 .control-group {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  align-items: center;
+  margin-bottom: 6px;
 }
 
-.control-group label {
-  font-size: 13px;
+.control-group strong {
+  margin-right: 6px;
 }
 
 .control-group input[type="number"] {
-  width: 70px;
+  width: 60px;
 }
 
-#imageWrapper {
-  position: relative;
-  display: inline-block;
-  border: 1px solid #ccc;
-  margin-top: 8px;
-  max-width: 100%;
+.control-group select,
+.control-group input,
+.control-group button {
+  margin-left: 4px;
+  margin-right: 4px;
+  font-size: 13px;
 }
 
-#roofImage {
+.control-group span {
+  margin-left: 8px;
+  color: #555;
+}
+
+.canvas-wrapper {
+  margin: 0 10px 10px 10px;
+  background: #999;
+  overflow: auto;
+}
+
+#canvas {
   display: block;
   max-width: 100%;
-  cursor: crosshair;
-}
-
-#overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  /* Module sollen anklickbar sein */
-  pointer-events: auto;
-}
-
-.hint {
-  margin-top: 12px;
-  font-size: 13px;
-  color: #555;
+  border: 1px solid #444;
+  background: #222;
 }
