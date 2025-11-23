@@ -5,6 +5,13 @@ const imageWrapper = document.getElementById("imageWrapper");
 const roofImage = document.getElementById("roofImage");
 const overlay = document.getElementById("overlay");
 
+// Referenz / Dachhaut
+const roofTypeSelect = document.getElementById("roofType");
+const tilesTraufeInput = document.getElementById("tilesTraufe");
+const tilesOrtgangInput = document.getElementById("tilesOrtgang");
+const measureInfo = document.getElementById("measureInfo");
+
+// Modulraster
 const modWidthInput = document.getElementById("modWidth");
 const modHeightInput = document.getElementById("modHeight");
 const modOrientationSelect = document.getElementById("modOrientation");
@@ -18,6 +25,13 @@ let points = [];
 let imgLoaded = false;
 let modules = [];
 let moduleIdCounter = 1;
+
+// Dachhaut-Spezifikation (cm)
+const TILE_TYPES = {
+  einfalz: { width_cm: 21.5, height_cm: 33 },
+  doppelfalz: { width_cm: 30, height_cm: 33 },
+  jumbo: { width_cm: 25, height_cm: 36 },
+};
 
 // ---------------- Bild laden ----------------
 
@@ -34,6 +48,7 @@ fileInput.addEventListener("change", (e) => {
     resetPolygonBtn.disabled = false;
     clearModulesBtn.disabled = true;
     pointInfo.textContent = "";
+    measureInfo.textContent = "";
     clearOverlay();
   };
   reader.readAsDataURL(file);
@@ -45,8 +60,10 @@ roofImage.addEventListener("load", () => {
 
 // ---------------- Polygon setzen ----------------
 
+// WICHTIG: 1. Punkt = Traufe links unten, 2. Punkt = Traufe rechts unten,
+// 3. Punkt = Ortgang oben rechts
 imageWrapper.addEventListener("click", (e) => {
-  // Klicks auf Module sollen nur das Modul löschen, keine neuen Punkte erzeugen
+  // Klick auf Modul: nur Modul löschen, keine neuen Punkte
   const target = e.target;
   if (target && target.matches("rect[data-module-id]")) {
     return;
@@ -72,6 +89,7 @@ resetPolygonBtn.addEventListener("click", () => {
   modules = [];
   clearOverlay();
   pointInfo.textContent = "";
+  measureInfo.textContent = "";
   clearModulesBtn.disabled = true;
 });
 
@@ -183,6 +201,12 @@ modOpacityInput.addEventListener("input", () => {
   });
 });
 
+// ---------------- Referenzmaße Berechnung ----------------
+
+roofTypeSelect.addEventListener("change", updateMeasurements);
+tilesTraufeInput.addEventListener("input", updateMeasurements);
+tilesOrtgangInput.addEventListener("input", updateMeasurements);
+
 // ---------------- Overlay für Polygon ----------------
 
 function clearOverlay() {
@@ -223,4 +247,67 @@ function redrawOverlay() {
   }
 
   pointInfo.textContent = `Punkte: ${points.length}`;
+
+  // Messwerte aktualisieren, wenn Referenz vorhanden
+  updateMeasurements();
+}
+
+// Polygonfläche in Pixeln (Shoelace-Formel)
+function polygonAreaPx(pts) {
+  if (pts.length < 3) return 0;
+  let area = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i + 1) % pts.length;
+    area += pts[i].x * pts[j].y - pts[j].x * pts[i].y;
+  }
+  return Math.abs(area) / 2;
+}
+
+// Messwerte (Längen, Fläche) berechnen
+function updateMeasurements() {
+  measureInfo.textContent = "";
+
+  const typeKey = roofTypeSelect.value;
+  const nTraufe = Number(tilesTraufeInput.value);
+  const nOrtgang = Number(tilesOrtgangInput.value);
+
+  if (!typeKey || !nTraufe || !nOrtgang || points.length < 3) {
+    return; // noch nicht genug Daten
+  }
+
+  const spec = TILE_TYPES[typeKey];
+  if (!spec) return;
+
+  const p1 = points[0]; // Traufe links unten
+  const p2 = points[1]; // Traufe rechts unten
+  const p3 = points[2]; // Ortgang oben rechts
+
+  const dist = (a, b) => Math.hypot(b.x - a.x, b.y - a.y);
+
+  const pxTraufe = dist(p1, p2);
+  const pxOrtgang = dist(p2, p3);
+
+  if (!pxTraufe || !pxOrtgang) return;
+
+  // reale Längen in cm (Ziegelanzahl * Ziegelmaß)
+  const traufe_cm = nTraufe * spec.width_cm;
+  const ortgang_cm = nOrtgang * spec.height_cm;
+
+  // cm pro Pixel (getrennt für Traufe/Ortgang)
+  const cmPerPxTraufe = traufe_cm / pxTraufe;
+  const cmPerPxOrtgang = ortgang_cm / pxOrtgang;
+
+  // Mittelwert als einfacher, isotroper Scale-Faktor
+  const cmPerPx = (cmPerPxTraufe + cmPerPxOrtgang) / 2;
+
+  // Fläche in Pixeln → Fläche in m²
+  const areaPx = polygonAreaPx(points);
+  const area_m2 = areaPx * (cmPerPx * cmPerPx) / 10000; // cm² → m²
+
+  const traufe_m = traufe_cm / 100;
+  const ortgang_m = ortgang_cm / 100;
+
+  measureInfo.textContent =
+    `Traufe: ${traufe_m.toFixed(2)} m, Ortgang: ${ortgang_m.toFixed(2)} m, ` +
+    `Fläche: ${area_m2.toFixed(2)} m²`;
 }
