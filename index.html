@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>PV-Dach-Planer (statische Version)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <h1>PV-Dach-Planer (Basisversion)</h1>
+
+    <div class="controls">
+      <label>
+        Dachfoto wählen:
+        <input type="file" id="fileInput" accept="image/*" />
+      </label>
+      <button id="resetBtn" disabled>Fläche zurücksetzen</button>
+      <span id="pointInfo"></span>
+    </div>
+
+    <div id="imageWrapper">
+      <img id="roofImage" alt="Dach" />
+      <svg id="overlay"></svg>
+    </div>
+
+    <p class="hint">
+      Hinweis: Bild wählen, dann in die Dachfläche klicken.
+      Jeder Klick setzt einen roten Punkt, Linien verbinden die Punkte.
+    </p>
+
+    <script src="script.js"></script>
+  </body>
+</html>
