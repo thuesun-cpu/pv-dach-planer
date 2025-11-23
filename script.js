@@ -46,8 +46,12 @@ roofImage.addEventListener("load", () => {
 // ---------------- Polygon setzen ----------------
 
 imageWrapper.addEventListener("click", (e) => {
-  // Nur reagieren, wenn direkt auf das Bild geklickt wurde
-  if (e.target !== roofImage) return;
+  // Klicks auf Module sollen nur das Modul löschen, keine neuen Punkte erzeugen
+  const target = e.target;
+  if (target && target.matches("rect[data-module-id]")) {
+    return;
+  }
+
   if (!imgLoaded) return;
 
   const rect = roofImage.getBoundingClientRect();
