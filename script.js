@@ -1,391 +1,497 @@
-// --- Konstanten ---
-// Dachtypen in cm
-const TILE_TYPES = {
-  einfalz: { name: "Einfalzziegel 21,5 x 33 cm", w: 21.5, h: 33 },
-  doppelfalz: { name: "Doppelfalzziegel / Betonstein 30 x 33 cm", w: 30, h: 33 },
-  jumbo: { name: "Jumbo 25 x 36 cm", w: 25, h: 36 },
-};
+// --- Canvas & DOM-Elemente --------------------------------------------------
 
-// Module in m
-const MODULE_WIDTH = 1.134; // m
-const MODULE_HEIGHT = 1.765; // m
-const GAP = 0.02; // m
-const EDGE_MARGIN = 0.3; // m
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
-// --- DOM-Elemente ---
 const fileInput = document.getElementById("fileInput");
-const roofImage = document.getElementById("roofImage");
-const polygonCanvas = document.getElementById("polygonCanvas");
-const moduleCanvas = document.getElementById("moduleCanvas");
-const resetBtn = document.getElementById("resetBtn");
-const pointCountSpan = document.getElementById("pointCount");
+const resetPolygonBtn = document.getElementById("resetPolygonBtn");
+
 const dachtypSelect = document.getElementById("dachtyp");
-const ziegelTraufeInput = document.getElementById("ziegelTraufe");
-const ziegelOrtgangInput = document.getElementById("ziegelOrtgang");
-const measureInfo = document.getElementById("measureInfo");
-const ausrichtungSelect = document.getElementById("ausrichtung");
-const opacityInput = document.getElementById("modOpacity");
+const tilesTraufeInput = document.getElementById("tilesTraufe");
+const tilesOrtgangInput = document.getElementById("tilesOrtgang");
+const infoText = document.getElementById("infoText");
+
+const orientationSelect = document.getElementById("orientation");
+const opacityRange = document.getElementById("opacityRange");
 const drawModulesBtn = document.getElementById("drawModulesBtn");
 const clearModulesBtn = document.getElementById("clearModulesBtn");
 const moduleInfo = document.getElementById("moduleInfo");
+const pointsInfo = document.getElementById("pointsInfo");
 
-const polyCtx = polygonCanvas.getContext("2d");
-const modCtx = moduleCanvas.getContext("2d");
+// --- Bild --------------------------------------------------------------------
 
-// --- Zustand ---
+const image = new Image();
 let imageLoaded = false;
-let imgNaturalWidth = 0;
-let imgNaturalHeight = 0;
-
-let points = []; // Punkte im Bild-Koordinatensystem
-let polygonClosed = false;
-
-let scale = 1; // Canvas-Pixel pro Bild-Pixel (wird bei resize gesetzt)
+let scale = 1;
 let offsetX = 0;
 let offsetY = 0;
 
-let roofWidthM = null;
-let roofHeightM = null;
-let roofAreaM2 = null;
+// --- Polygon (Dachfläche) ---------------------------------------------------
 
-// --- Hilfsfunktionen ---
+let polygon = [];          // [{x,y}, ...] in Canvas-Koordinaten
+let polygonClosed = false;
+let draggingPolygonIndex = -1;
 
-function resizeCanvasesToImage() {
-  if (!imageLoaded) return;
+// --- Generatorfläche / Module -----------------------------------------------
 
-  // sichtbare Breite des Bildes
-  const wrapper = document.getElementById("canvasWrapper");
-  const displayWidth = roofImage.clientWidth || wrapper.clientWidth;
-  const displayHeight = imgNaturalHeight * (displayWidth / imgNaturalWidth);
+let generatorQuad = null;  // [{x,y}, ...] 4 Ecken in Reihenfolge: TL, TR, BR, BL
+let draggingGeneratorIndex = -1;
 
-  roofImage.style.width = displayWidth + "px";
-  roofImage.style.height = displayHeight + "px";
+let moduleRows = 0;
+let moduleCols = 0;
 
-  polygonCanvas.width = displayWidth;
-  polygonCanvas.height = displayHeight;
-  moduleCanvas.width = displayWidth;
-  moduleCanvas.height = displayHeight;
+const MODULE_W_VERT = 1.134; // m (Breite bei vertikal)
+const MODULE_H_VERT = 1.765; // m (Höhe bei vertikal)
+const GAP_M = 0.02;          // Fuge zwischen Modulen (m)
+const MARGIN_M = 0.30;       // Rand zur Dachkante (m)
 
-  const rect = polygonCanvas.getBoundingClientRect();
-  offsetX = rect.left;
-  offsetY = rect.top;
+let traufeM = 0;   // reale Länge Traufe (m)
+let ortgangM = 0;  // reale Länge Ortgang (m)
+let areaRoofM2 = 0;
 
-  scale = displayWidth / imgNaturalWidth;
+let isMouseDown = false;
+const HANDLE_RADIUS = 8;
 
-  redrawAll();
-}
+// --- Hilfsfunktionen --------------------------------------------------------
 
-function imgToCanvas(pt) {
-  // Bild-Koordinaten -> Canvas-Pixel
-  return { x: pt.x * scale, y: pt.y * scale };
-}
-
-function canvasToImg(x, y) {
-  // Canvas-Pixel -> Bild-Koordinaten
-  return { x: x / scale, y: y / scale };
-}
-
-function distanceCanvas(a, b) {
-  const ax = a.x * scale;
-  const ay = a.y * scale;
-  const bx = b.x * scale;
-  const by = b.y * scale;
-  const dx = ax - bx;
-  const dy = ay - by;
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-function drawPolygon() {
-  polyCtx.clearRect(0, 0, polygonCanvas.width, polygonCanvas.height);
-
-  if (points.length === 0) return;
-
-  polyCtx.lineWidth = 2;
-  polyCtx.strokeStyle = "red";
-  polyCtx.fillStyle = "rgba(255,0,0,0.15)";
-
-  const first = imgToCanvas(points[0]);
-
-  polyCtx.beginPath();
-  polyCtx.moveTo(first.x, first.y);
-
-  for (let i = 1; i < points.length; i++) {
-    const p = imgToCanvas(points[i]);
-    polyCtx.lineTo(p.x, p.y);
-  }
-
-  if (polygonClosed) {
-    polyCtx.closePath();
-    polyCtx.fill();
-  }
-
-  polyCtx.stroke();
-
-  // Punkte
-  polyCtx.fillStyle = "cyan";
-  for (const p of points) {
-    const cp = imgToCanvas(p);
-    polyCtx.beginPath();
-    polyCtx.arc(cp.x, cp.y, 4, 0, Math.PI * 2);
-    polyCtx.fill();
-  }
+function getMousePos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (evt.clientX - rect.left),
+    y: (evt.clientY - rect.top),
+  };
 }
 
-function updateMeasurements() {
-  const dachKey = dachtypSelect.value;
-  const traufeCount = parseFloat(ziegelTraufeInput.value);
-  const ortgangCount = parseFloat(ziegelOrtgangInput.value);
+function polygonArea(points) {
+  if (points.length < 3) return 0;
+  let sum = 0;
+  for (let i = 0; i < points.length; i++) {
+    const p1 = points[i];
+    const p2 = points[(i + 1) % points.length];
+    sum += p1.x * p2.y - p2.x * p1.y;
+  }
+  return Math.abs(sum) / 2;
+}
 
-  if (!dachKey || !TILE_TYPES[dachKey] || !traufeCount || !ortgangCount) {
-    roofWidthM = roofHeightM = roofAreaM2 = null;
-    measureInfo.textContent = "Traufe: – m, Ortgang: – m, Fläche: – m²";
+function lerp(a, b, t) {
+  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
+}
+
+function findHandleIndex(points, pos, radius) {
+  if (!points) return -1;
+  for (let i = 0; i < points.length; i++) {
+    if (distance(points[i], pos) <= radius) return i;
+  }
+  return -1;
+}
+
+// --- Bild laden und an Canvas anpassen --------------------------------------
+
+function fitCanvasToImage() {
+  const maxWidth = 1200;
+  const maxHeight = 700;
+
+  let w = image.width;
+  let h = image.height;
+
+  const scaleW = maxWidth / w;
+  const scaleH = maxHeight / h;
+  scale = Math.min(scaleW, scaleH, 1);
+
+  canvas.width = w * scale;
+  canvas.height = h * scale;
+
+  offsetX = 0;
+  offsetY = 0;
+}
+
+function drawImage() {
+  if (!imageLoaded) {
+    ctx.fillStyle = "#eee";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     return;
   }
+  ctx.drawImage(image, 0, 0, image.width * scale, image.height * scale);
+}
 
-  const t = TILE_TYPES[dachKey];
-  roofWidthM = (traufeCount * t.w) / 100; // m
-  roofHeightM = (ortgangCount * t.h) / 100; // m
-  roofAreaM2 = roofWidthM * roofHeightM;
+// --- Zeichnen ---------------------------------------------------------------
 
-  measureInfo.textContent =
-    "Traufe: " +
-    roofWidthM.toFixed(2) +
-    " m, Ortgang: " +
-    roofHeightM.toFixed(2) +
-    " m, Fläche: " +
-    roofAreaM2.toFixed(2) +
-    " m²";
+function drawPolygon() {
+  if (polygon.length === 0) return;
 
-  // wenn Polygon geschlossen: Fläche in m² anhand Pixelmaß berechnen
-  if (polygonClosed && points.length >= 3) {
-    const scaleMPerPixel = roofWidthM / distanceCanvas(points[0], points[1]);
-    const areaPixels = polygonAreaPixels();
-    const areaM2 = areaPixels * Math.pow(scaleMPerPixel, 2);
-    measureInfo.textContent += " (Polygon: " + areaM2.toFixed(2) + " m²)";
+  // Polygon-Linien
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = "red";
+  ctx.fillStyle = "rgba(255,0,0,0.03)";
+
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x, polygon[0].y);
+  for (let i = 1; i < polygon.length; i++) {
+    ctx.lineTo(polygon[i].x, polygon[i].y);
   }
-}
-
-function polygonAreaPixels() {
-  // Shoelace im Bild-Koordinatensystem
-  let area = 0;
-  const n = points.length;
-  for (let i = 0; i < n; i++) {
-    const p1 = points[i];
-    const p2 = points[(i + 1) % n];
-    area += p1.x * p2.y - p2.x * p1.y;
+  if (polygonClosed) {
+    ctx.closePath();
+    ctx.fill();
   }
-  return Math.abs(area) / 2;
+  ctx.stroke();
+
+  // Eckpunkte
+  ctx.fillStyle = "#00bcd4";
+  polygon.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
-function redrawAll() {
-  drawPolygon();
-  drawModules();
-}
+function drawGeneratorAndModules() {
+  if (!generatorQuad || moduleRows <= 0 || moduleCols <= 0) return;
 
-// --- Modulraster ---
+  const alpha = parseFloat(opacityRange.value) || 0.5;
 
-function drawModules() {
-  modCtx.clearRect(0, 0, moduleCanvas.width, moduleCanvas.height);
-  if (!polygonClosed || !roofWidthM || !roofHeightM) return;
-  if (points.length < 3) return;
+  // Generatorfläche einfärben
+  ctx.save();
+  ctx.globalAlpha = alpha;
 
-  const orientation = ausrichtungSelect.value; // "vertikal" | "horizontal"
-  const opacity = parseFloat(opacityInput.value);
+  ctx.beginPath();
+  ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
+  for (let i = 1; i < 4; i++) {
+    ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = "rgba(80,80,80,0.7)";
+  ctx.fill();
 
-  const modW = orientation === "vertikal" ? MODULE_WIDTH : MODULE_HEIGHT;
-  const modH = orientation === "vertikal" ? MODULE_HEIGHT : MODULE_WIDTH;
+  // Modulraster (weiße Linien)
+  ctx.globalAlpha = alpha + 0.2;
+  ctx.strokeStyle = "white";
+  ctx.lineWidth = 1;
 
-  const usableWidth = Math.max(roofWidthM - 2 * EDGE_MARGIN, 0);
-  const usableHeight = Math.max(roofHeightM - 2 * EDGE_MARGIN, 0);
+  // Reihen entlang Ortgang (Höhe), Spalten entlang Traufe (Länge)
+  const q0 = generatorQuad[0]; // TL
+  const q1 = generatorQuad[1]; // TR
+  const q2 = generatorQuad[2]; // BR
+  const q3 = generatorQuad[3]; // BL
 
-  const pitchCols = Math.floor(
-    (usableWidth + GAP) / (modW + GAP)
-  );
-  const pitchRows = Math.floor(
-    (usableHeight + GAP) / (modH + GAP)
-  );
+  for (let r = 0; r < moduleRows; r++) {
+    const t0 = r / moduleRows;
+    const t1 = (r + 1) / moduleRows;
 
-  if (pitchCols <= 0 || pitchRows <= 0) return;
+    const left0 = lerp(q0, q3, t0);
+    const right0 = lerp(q1, q2, t0);
+    const left1 = lerp(q0, q3, t1);
+    const right1 = lerp(q1, q2, t1);
 
-  const totalModWidthM = pitchCols * modW + (pitchCols - 1) * GAP;
-  const totalModHeightM = pitchRows * modH + (pitchRows - 1) * GAP;
+    for (let c = 0; c < moduleCols; c++) {
+      const s0 = c / moduleCols;
+      const s1 = (c + 1) / moduleCols;
 
-  // Maßstab in m/Pixel entlang Traufe und Ortgang
-  const scaleMPerPixelX = roofWidthM / distanceCanvas(points[0], points[1]);
-  const scaleMPerPixelY = roofHeightM / distanceCanvas(points[1], points[2]);
+      const a = lerp(left0, right0, s0);
+      const b = lerp(left0, right0, s1);
+      const d = lerp(left1, right1, s0);
+      const e = lerp(left1, right1, s1);
 
-  // Basisvektoren entlang Traufe und Ortgang (im Canvas)
-  const p0 = imgToCanvas(points[0]);
-  const p1 = imgToCanvas(points[1]);
-  const p2 = imgToCanvas(points[2]);
-
-  const vTraufe = {
-    x: (p1.x - p0.x) / roofWidthM,
-    y: (p1.y - p0.y) / roofWidthM,
-  };
-  const vOrtgang = {
-    x: (p2.x - p1.x) / roofHeightM,
-    y: (p2.y - p1.y) / roofHeightM,
-  };
-
-  const origin = {
-    x:
-      p0.x +
-      vTraufe.x * EDGE_MARGIN +
-      vOrtgang.x * EDGE_MARGIN,
-    y:
-      p0.y +
-      vTraufe.y * EDGE_MARGIN +
-      vOrtgang.y * EDGE_MARGIN,
-  };
-
-  modCtx.save();
-  modCtx.globalAlpha = opacity;
-  modCtx.strokeStyle = "white";
-  modCtx.fillStyle = "rgba(80,80,80,1)";
-  modCtx.lineWidth = 1;
-
-  for (let r = 0; r < pitchRows; r++) {
-    for (let c = 0; c < pitchCols; c++) {
-      const offsetXM =
-        c * (modW + GAP);
-      const offsetYM =
-        r * (modH + GAP);
-
-      const base = {
-        x: origin.x + vTraufe.x * offsetXM + vOrtgang.x * offsetYM,
-        y: origin.y + vTraufe.y * offsetXM + vOrtgang.y * offsetYM,
-      };
-
-      const pA = base;
-      const pB = {
-        x: base.x + vTraufe.x * modW,
-        y: base.y + vTraufe.y * modW,
-      };
-      const pD = {
-        x: base.x + vOrtgang.x * modH,
-        y: base.y + vOrtgang.y * modH,
-      };
-      const pC = {
-        x: pB.x + vOrtgang.x * modH,
-        y: pB.y + vOrtgang.y * modH,
-      };
-
-      modCtx.beginPath();
-      modCtx.moveTo(pA.x, pA.y);
-      modCtx.lineTo(pB.x, pB.y);
-      modCtx.lineTo(pC.x, pC.y);
-      modCtx.lineTo(pD.x, pD.y);
-      modCtx.closePath();
-      modCtx.fill();
-      modCtx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(e.x, e.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.stroke();
     }
   }
 
-  modCtx.restore();
+  ctx.restore();
 
-  moduleInfo.textContent =
-    "Modul: " +
-    MODULE_HEIGHT.toFixed(3) +
-    " x " +
-    MODULE_WIDTH.toFixed(3) +
-    " m, Fuge " +
-    GAP.toFixed(2) +
-    " m, Rand " +
-    EDGE_MARGIN.toFixed(2) +
-    " m, Reihen: " +
-    pitchRows +
-    ", Spalten: " +
-    pitchCols;
+  // Ziehpunkte der Generatorfläche
+  ctx.fillStyle = "#00ff7f";
+  generatorQuad.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+    ctx.fill();
+  });
 }
 
-// --- Event-Handler ---
+function redraw() {
+  drawImage();
+  drawPolygon();
+  drawGeneratorAndModules();
+}
 
-fileInput.addEventListener("change", (e) => {
+// --- Maße berechnen ---------------------------------------------------------
+
+function getTileSizeFromSelection() {
+  // Rückgabe: {traufeM, ortgangM} pro Ziegel
+  const value = dachtypSelect.value;
+  switch (value) {
+    case "einfalzziegel":
+      return { traufe: 0.215, ortgang: 0.33 };
+    case "doppelFalz":
+      return { traufe: 0.30, ortgang: 0.33 };
+    case "jumbo":
+      return { traufe: 0.25, ortgang: 0.36 };
+    default:
+      return null;
+  }
+}
+
+function updateRoofMeasurements() {
+  if (!polygonClosed || polygon.length < 4) {
+    infoText.textContent = "Traufe: – m, Ortgang: – m, Fläche: – m²";
+    return;
+  }
+
+  const tileSize = getTileSizeFromSelection();
+  const tilesTraufe = parseInt(tilesTraufeInput.value, 10);
+  const tilesOrtgang = parseInt(tilesOrtgangInput.value, 10);
+
+  if (!tileSize || !tilesTraufe || !tilesOrtgang) {
+    infoText.textContent = "Traufe: – m, Ortgang: – m, Fläche: – m²";
+    return;
+  }
+
+  traufeM = tilesTraufe * tileSize.traufe;
+  ortgangM = tilesOrtgang * tileSize.ortgang;
+
+  // Annahme: Punkt 0 = Traufe links, Punkt 1 = Traufe rechts, Punkt 3 = Ortgang oben links
+  const traufePx = distance(polygon[0], polygon[1]);
+  const ortgangPx = distance(polygon[0], polygon[3]);
+
+  const scaleTraufe = traufePx > 0 ? traufeM / traufePx : 0;
+  const scaleOrtgang = ortgangPx > 0 ? ortgangM / ortgangPx : 0;
+  const mPerPx = (scaleTraufe + scaleOrtgang) / 2;
+
+  const areaPx = polygonArea(polygon);
+  areaRoofM2 = mPerPx > 0 ? areaPx * mPerPx * mPerPx : 0;
+
+  infoText.textContent =
+    `Traufe: ${traufeM.toFixed(2)} m, ` +
+    `Ortgang: ${ortgangM.toFixed(2)} m, ` +
+    `Fläche: ${areaRoofM2.toFixed(2)} m²`;
+}
+
+// --- Generatorfläche & Modulanzahl ------------------------------------------
+
+function computeModuleCounts() {
+  if (!traufeM || !ortgangM) {
+    moduleInfo.textContent = "Bitte zuerst Dachhaut und Ziegelanzahl setzen.";
+    moduleRows = 0;
+    moduleCols = 0;
+    return;
+  }
+
+  const orientation = orientationSelect.value; // "vertical" | "horizontal"
+
+  let moduleW = MODULE_W_VERT;
+  let moduleH = MODULE_H_VERT;
+
+  if (orientation === "horizontal") {
+    // Quer verlegt: Seiten tauschen
+    [moduleW, moduleH] = [moduleH, moduleW];
+  }
+
+  const usableTraufe = traufeM - 2 * MARGIN_M;
+  const usableOrtgang = ortgangM - 2 * MARGIN_M;
+
+  if (usableTraufe <= 0 || usableOrtgang <= 0) {
+    moduleInfo.textContent = "Zu wenig Platz (Rand 0,30 m berücksichtigt).";
+    moduleRows = 0;
+    moduleCols = 0;
+    return;
+  }
+
+  moduleCols = Math.floor((usableTraufe + GAP_M) / (moduleW + GAP_M));
+  moduleRows = Math.floor((usableOrtgang + GAP_M) / (moduleH + GAP_M));
+
+  if (moduleCols <= 0 || moduleRows <= 0) {
+    moduleInfo.textContent = "Kein Platz für Module mit Rand und Fuge.";
+    moduleRows = 0;
+    moduleCols = 0;
+    return;
+  }
+
+  moduleInfo.textContent =
+    `Modul: ${moduleH.toFixed(3)} x ${moduleW.toFixed(3)} m, ` +
+    `Fuge ${GAP_M.toFixed(2)} m, Rand ${MARGIN_M.toFixed(2)} m, ` +
+    `Reihen: ${moduleRows}, Spalten: ${moduleCols}`;
+}
+
+// Generator-Quad initial innerhalb des Polygons / Bounding Box platzieren
+function createDefaultGeneratorQuad() {
+  if (!polygonClosed || polygon.length < 4) {
+    generatorQuad = null;
+    return;
+  }
+
+  // einfache Bounding-Box des Polygons
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
+
+  polygon.forEach(p => {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  });
+
+  // Rand in Pixel grob aus Metern ableiten
+  const traufePx = distance(polygon[0], polygon[1]);
+  const ortgangPx = distance(polygon[0], polygon[3]);
+  const pxPerM_traufe = traufePx / (traufeM || 1);
+  const pxPerM_ortgang = ortgangPx / (ortgangM || 1);
+  const marginPxX = MARGIN_M * pxPerM_traufe;
+  const marginPxY = MARGIN_M * pxPerM_ortgang;
+
+  const tl = { x: minX + marginPxX, y: minY + marginPxY };
+  const tr = { x: maxX - marginPxX, y: minY + marginPxY };
+  const br = { x: maxX - marginPxX, y: maxY - marginPxY };
+  const bl = { x: minX + marginPxX, y: maxY - marginPxY };
+
+  generatorQuad = [tl, tr, br, bl];
+}
+
+// --- Events: Datei / Bild ---------------------------------------------------
+
+fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
 
-  const url = URL.createObjectURL(file);
-  roofImage.onload = () => {
-    imageLoaded = true;
-    imgNaturalWidth = roofImage.naturalWidth;
-    imgNaturalHeight = roofImage.naturalHeight;
-    resizeCanvasesToImage();
+  const reader = new FileReader();
+  reader.onload = function (ev) {
+    image.onload = () => {
+      imageLoaded = true;
+      fitCanvasToImage();
+      redraw();
+    };
+    image.src = ev.target.result;
   };
-  roofImage.src = url;
+  reader.readAsDataURL(file);
 });
 
-window.addEventListener("resize", () => {
-  if (imageLoaded) resizeCanvasesToImage();
-});
+// --- Events: Maus -----------------------------------------------------------
 
-polygonCanvas.addEventListener("click", (e) => {
+canvas.addEventListener("mousedown", e => {
   if (!imageLoaded) return;
+  const pos = getMousePos(e);
+  isMouseDown = true;
 
-  const x = e.clientX - offsetX;
-  const y = e.clientY - offsetY;
-  if (x < 0 || y < 0) return;
-
-  const imgPt = canvasToImg(x, y);
-
-  if (points.length >= 3) {
-    const distToFirst = distanceCanvas(imgPt, points[0]);
-    if (distToFirst < 10) {
-      polygonClosed = true;
-      redrawAll();
-      updateMeasurements();
+  // 1) Zuerst Generator-Handles prüfen
+  if (generatorQuad) {
+    const idx = findHandleIndex(generatorQuad, pos, HANDLE_RADIUS + 4);
+    if (idx >= 0) {
+      draggingGeneratorIndex = idx;
       return;
     }
   }
 
-  if (polygonClosed) {
-    // neue Fläche beginnen
-    points = [];
-    polygonClosed = false;
+  // 2) Polygon-Handles prüfen
+  const polyIdx = findHandleIndex(polygon, pos, HANDLE_RADIUS + 4);
+  if (polyIdx >= 0) {
+    draggingPolygonIndex = polyIdx;
+    return;
   }
 
-  points.push(imgPt);
-  pointCountSpan.textContent = points.length.toString();
-  redrawAll();
-
-  if (polygonClosed) updateMeasurements();
+  // 3) Neues Polygon-Vertex setzen (solange nicht geschlossen)
+  if (!polygonClosed) {
+    if (polygon.length >= 3 && distance(pos, polygon[0]) < HANDLE_RADIUS + 4) {
+      polygonClosed = true;
+      updateRoofMeasurements();
+    } else {
+      polygon.push(pos);
+      pointsInfo.textContent = polygon.length.toString();
+    }
+    redraw();
+  }
 });
 
-resetBtn.addEventListener("click", () => {
-  points = [];
+canvas.addEventListener("mousemove", e => {
+  if (!isMouseDown) return;
+  const pos = getMousePos(e);
+
+  if (draggingPolygonIndex >= 0) {
+    polygon[draggingPolygonIndex] = pos;
+    if (polygonClosed) updateRoofMeasurements();
+    redraw();
+  } else if (draggingGeneratorIndex >= 0 && generatorQuad) {
+    generatorQuad[draggingGeneratorIndex] = pos;
+    redraw();
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  isMouseDown = false;
+  draggingPolygonIndex = -1;
+  draggingGeneratorIndex = -1;
+});
+
+canvas.addEventListener("mouseleave", () => {
+  isMouseDown = false;
+  draggingPolygonIndex = -1;
+  draggingGeneratorIndex = -1;
+});
+
+// --- Buttons ---------------------------------------------------------------
+
+resetPolygonBtn.addEventListener("click", () => {
+  polygon = [];
   polygonClosed = false;
-  pointCountSpan.textContent = "0";
-  polyCtx.clearRect(0, 0, polygonCanvas.width, polygonCanvas.height);
-  modCtx.clearRect(0, 0, moduleCanvas.width, moduleCanvas.height);
-});
-
-dachtypSelect.addEventListener("change", updateMeasurements);
-ziegelTraufeInput.addEventListener("input", updateMeasurements);
-ziegelOrtgangInput.addEventListener("input", updateMeasurements);
-
-opacityInput.addEventListener("input", () => {
-  redrawAll();
+  generatorQuad = null;
+  moduleRows = 0;
+  moduleCols = 0;
+  pointsInfo.textContent = "0";
+  infoText.textContent = "Traufe: – m, Ortgang: – m, Fläche: – m²";
+  moduleInfo.textContent =
+    "Modul: 1,765 x 1,134 m, Fuge 0,02 m, Rand 0,30 m, Reihen: –, Spalten: –";
+  redraw();
 });
 
 drawModulesBtn.addEventListener("click", () => {
-  if (!polygonClosed) return;
-  drawModules();
-  clearModulesBtn.disabled = false;
+  if (!polygonClosed || polygon.length < 4) {
+    alert("Bitte zuerst das Dach-Polygon vollständig schließen.");
+    return;
+  }
+
+  updateRoofMeasurements();
+  computeModuleCounts();
+  if (moduleRows <= 0 || moduleCols <= 0) {
+    redraw();
+    return;
+  }
+
+  if (!generatorQuad) {
+    createDefaultGeneratorQuad();
+  }
+
+  redraw();
 });
 
 clearModulesBtn.addEventListener("click", () => {
-  modCtx.clearRect(0, 0, moduleCanvas.width, moduleCanvas.height);
-  clearModulesBtn.disabled = true;
+  generatorQuad = null;
+  moduleRows = 0;
+  moduleCols = 0;
+  moduleInfo.textContent =
+    "Modul: 1,765 x 1,134 m, Fuge 0,02 m, Rand 0,30 m, Reihen: –, Spalten: –";
+  redraw();
 });
 
-// Initial
-moduleInfo.textContent =
-  "Modul: " +
-  MODULE_HEIGHT +
-  " x " +
-  MODULE_WIDTH +
-  " m, Fuge " +
-  GAP +
-  " m, Rand " +
-  EDGE_MARGIN +
-  " m";
+orientationSelect.addEventListener("change", () => {
+  if (!polygonClosed) return;
+  computeModuleCounts();
+  redraw();
+});
+
+opacityRange.addEventListener("input", () => {
+  redraw();
+});
+
+// --- Initialer Zustand ------------------------------------------------------
+
+redraw();
