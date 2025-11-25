@@ -18,6 +18,30 @@
 </head>
 <body>
   <h1>Dachfläche markieren</h1>
+
+  <div>
+  <label>Ziegeltyp:</label>
+  <select id="tileType">
+    <option value="">Bitte wählen …</option>
+    <option value="einfalz">Einfalzziegel 21 x 33 cm</option>
+    <option value="einfalzJumbo">Einfalz Jumbo 25 x 36 cm</option>
+    <option value="doppelfalz">Doppelfalz 30 x 33 cm</option>
+    <option value="doppelfalzJumbo">Doppelfalz Jumbo 30 x 38 cm</option>
+  </select>
+</div>
+
+<div>
+  <label>Anzahl Ziegel Traufe:</label>
+  <input type="number" id="tilesTraufe" value="30" min="1" />
+</div>
+
+<div>
+  <label>Anzahl Ziegel Ortgang:</label>
+  <input type="number" id="tilesOrtgang" value="15" min="1" />
+</div>
+
+<p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
+
   <input type="file" id="fileInput" accept="image/*" />
   <p>Klicke ins Bild, um Punkte zu setzen. Klicke auf den Startpunkt, um zu schließen.</p>
   <canvas id="canvas"></canvas>
@@ -25,41 +49,3 @@
   <script src="script.js"></script>
 </body>
 </html>
-
-const tileType = document.getElementById("tileType");
-const tilesTraufeInput = document.getElementById("tilesTraufe");
-const tilesOrtgangInput = document.getElementById("tilesOrtgang");
-const info = document.getElementById("info");
-
-tileType.addEventListener("change", computeMeasurements);
-tilesTraufeInput.addEventListener("input", computeMeasurements);
-tilesOrtgangInput.addEventListener("input", computeMeasurements);
-
-function getTileSize() {
-  switch (tileType.value) {
-    case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.25, ortgang: 0.36 };
-    case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
-    case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.38 };
-    default: return null;
-  }
-}
-
-function computeMeasurements() {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value, 10);
-  const o = parseInt(tilesOrtgangInput.value, 10);
-  if (!tile || !t || !o) {
-    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
-    return;
-  }
-
-  const traufe = tile.traufe * t;
-  const ortgang = tile.ortgang * o;
-  const area = traufe * ortgang;
-
-  info.textContent =
-    `Traufe: ${traufe.toFixed(2)} m, ` +
-    `Ortgang: ${ortgang.toFixed(2)} m, ` +
-    `Fläche: ${area.toFixed(2)} m²`;
-}
