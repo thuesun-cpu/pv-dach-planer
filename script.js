@@ -36,7 +36,7 @@ fileInput.addEventListener("change", (e) => {
   reader.readAsDataURL(file);
 });
 
-// Polygon setzen
+// Polygon setzen mit größerem Toleranzradius (15px) zum Schließen
 canvas.addEventListener("click", (e) => {
   if (!roofImage.src || isClosed) return;
 
@@ -46,8 +46,8 @@ canvas.addEventListener("click", (e) => {
     y: e.clientY - rect.top
   };
 
-  if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
-    polygon.push(polygon[0]); // schließe das Polygon
+  if (polygon.length >= 3 && distance(pos, polygon[0]) < 15) {
+    polygon.push(polygon[0]); // schließt das Polygon
     isClosed = true;
     computeRoofDimensions();
     createDefaultGeneratorQuad();
@@ -89,6 +89,15 @@ function draw() {
       ctx.beginPath();
       ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
       ctx.fillStyle = "#00bcd4";
+      ctx.fill();
+    }
+
+    // Startpunkt hervorheben (grün)
+    if (polygon.length > 0) {
+      const p0 = polygon[0];
+      ctx.beginPath();
+      ctx.arc(p0.x, p0.y, 8, 0, Math.PI * 2);
+      ctx.fillStyle = "#00ff00";
       ctx.fill();
     }
   }
