@@ -2,81 +2,45 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>PV-Dach-Planer (Basisversion)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>PV-Dach-Planer</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>PV-Dach-Planer (Basisversion)</h1>
+  <h1>PV-Dach-Planer</h1>
 
   <div class="controls">
-    <!-- Datei + Reset -->
-    <div class="control-row">
-      <span class="label">Dachfoto wählen:</span>
+    <label>
+      Dachbild hochladen:
       <input type="file" id="fileInput" accept="image/*" />
-      <button id="resetBtn">Fläche zurücksetzen</button>
-      <span>Punkte: <span id="pointCount">0</span></span>
-    </div>
+    </label>
 
-    <!-- Referenz / Dachhaut -->
-    <div class="control-row">
-      <strong>Referenz / Dachhaut</strong>
-    </div>
-    <div class="control-row">
-      <span class="label">Dachhaut:</span>
-      <select id="dachtyp">
+    <label>
+      Ziegeltyp:
+      <select id="tileType">
         <option value="">Bitte wählen ...</option>
-        <option value="einfalz">Einfalzziegel 21,5 x 33 cm</option>
-        <option value="doppelfalz">Doppelfalzziegel / Betonstein 30 x 33 cm</option>
-        <option value="jumbo">Jumbo 25 x 36 cm</option>
+        <option value="einfalz">Einfalzziegel (21.5 x 33 cm)</option>
+        <option value="doppelfalz">Doppelfalz / Betonstein (30 x 33 cm)</option>
+        <option value="jumbo">Jumbo (30 x 40 cm)</option>
       </select>
+    </label>
 
-      <span class="label">Ziegel Traufe (Anzahl):</span>
-      <input id="ziegelTraufe" type="number" min="1" value="30" />
+    <label>
+      Anzahl Ziegel Traufe:
+      <input type="number" id="tilesTraufe" value="30" min="1" />
+    </label>
 
-      <span class="label">Ziegel Ortgang (Anzahl):</span>
-      <input id="ziegelOrtgang" type="number" min="1" value="15" />
+    <label>
+      Anzahl Ziegel Ortgang:
+      <input type="number" id="tilesOrtgang" value="15" min="1" />
+    </label>
 
-      <span id="measureInfo">Traufe: – m, Ortgang: – m, Fläche: – m²</span>
-    </div>
-
-    <!-- Module -->
-    <div class="control-row">
-      <strong>Generatorfläche / Module</strong>
-    </div>
-    <div class="control-row">
-      <span class="label">Ausrichtung:</span>
-      <select id="ausrichtung">
-        <option value="vertikal">vertikal</option>
-        <option value="horizontal">horizontal</option>
-      </select>
-
-      <span class="label">Transparenz:</span>
-      <input
-        id="modOpacity"
-        type="range"
-        min="0"
-        max="1"
-        step="0.05"
-        value="0.6"
-      />
-
-      <button id="drawModulesBtn">Module einzeichnen</button>
-      <button id="clearModulesBtn" disabled>Module löschen</button>
-    </div>
-
-    <div class="control-row">
-      <span id="moduleInfo">
-        Modul: 1,765 x 1,134 m, Fuge 0,02 m, Rand 0,30 m
-      </span>
-    </div>
+    <button id="resetBtn">Zurücksetzen</button>
+    <div id="info">Traufe: –, Ortgang: –, Fläche: –</div>
   </div>
 
-  <!-- Bild + Canvas -->
   <div id="canvasWrapper">
-    <img id="roofImage" alt="Dachfoto" />
-    <canvas id="polygonCanvas"></canvas>
-    <canvas id="moduleCanvas"></canvas>
+    <canvas id="canvas"></canvas>
   </div>
 
   <script src="script.js"></script>
