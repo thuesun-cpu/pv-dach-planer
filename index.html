@@ -4,21 +4,16 @@
   <meta charset="UTF-8" />
   <title>PV-Dach-Planer</title>
   <style>
-    canvas {
-      border: 1px solid #ccc;
-      display: block;
-      margin-top: 10px;
-    }
+    body { font-family: Arial, sans-serif; }
+    canvas { border: 1px solid #ccc; margin-top: 10px; display: block; }
+    label, select, input, button { margin-right: 10px; margin-top: 10px; }
   </style>
 </head>
 <body>
   <h1>PV-Dach-Planer</h1>
 
-  <label>Bild auswählen:
-    <input type="file" id="fileInput" accept="image/*" />
-  </label>
-
-  <br><br>
+  <input type="file" id="fileInput" accept="image/*" />
+  <br>
 
   <label>Ziegeltyp:
     <select id="tileType">
@@ -30,22 +25,20 @@
     </select>
   </label>
 
-  <br><br>
-
-  <label>Ziegel Traufe:
+  <label>Traufe (Ziegelanzahl):
     <input type="number" id="tilesTraufe" value="30" min="1" />
   </label>
 
-  <label>Ziegel Ortgang:
+  <label>Ortgang (Ziegelanzahl):
     <input type="number" id="tilesOrtgang" value="15" min="1" />
   </label>
-
-  <p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
 
   <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
   <button id="clearGeneratorBtn">Generatorfläche löschen</button>
 
-  <canvas id="canvas"></canvas>
+  <p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
+
+  <canvas id="canvas" width="1000" height="600"></canvas>
 
   <script src="script.js"></script>
 </body>
