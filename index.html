@@ -1,49 +1,59 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>PV-Dach-Planer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
       font-family: sans-serif;
-      margin: 20px;
     }
     canvas {
       border: 1px solid #ccc;
       display: block;
       margin-top: 10px;
     }
-    .controls {
+    #controls {
       margin-bottom: 10px;
-    }
-    #moduleTransparency {
-      width: 200px;
     }
   </style>
 </head>
 <body>
   <h1>PV-Dach-Planer</h1>
 
-  <div class="controls">
-    <input type="file" id="fileInput" accept="image/*">
-    <select id="tileType">
-      <option value="">Ziegeltyp wählen</option>
-      <option value="einfalz21x33">Einfalz 21x33 cm</option>
-      <option value="einfalz25x36">Einfalz Jumbo 25x36 cm</option>
-      <option value="doppelfalz30x33">Doppelfalz 30x33 cm</option>
-      <option value="doppelfalz30x38">Doppelfalz Jumbo 30x38 cm</option>
-    </select>
-    Traufe: <input type="number" id="traufe" value="38"> 
-    Ortgang: <input type="number" id="ortgang" value="15">
-    <button id="createGenerator">Generatorfläche anzeigen</button>
-    <button id="clearGenerator">Generatorfläche löschen</button>
-    Modul-Transparenz:
-    <input type="range" id="moduleTransparency" min="0" max="1" step="0.05" value="1">
-    <div id="info"></div>
+  <div id="controls">
+    <label>Dachbild wählen:
+      <input type="file" id="fileInput" accept="image/*">
+    </label><br>
+
+    <label>Ziegeltyp:
+      <select id="tileType">
+        <option value="einfalz">Einfalzziegel 21x33 cm</option>
+        <option value="einfalzjumbo">Einfalz Jumbo 25x36 cm</option>
+        <option value="doppelfalz">Doppelfalz 30x33 cm</option>
+        <option value="doppelfalzjumbo">Doppelfalz Jumbo 30x38 cm</option>
+      </select>
+    </label>
+
+    <label>Traufe:
+      <input type="number" id="traufeCount" value="38">
+    </label>
+
+    <label>Ortgang:
+      <input type="number" id="ortgangCount" value="15">
+    </label>
+
+    <button id="showGenBtn">Generatorfläche anzeigen</button>
+    <button id="clearGenBtn">Generatorfläche löschen</button>
+
+    <label>Modul-Transparenz:
+      <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="1">
+    </label>
+
+    <p id="measurements">Traufe: –, Ortgang: –, Fläche: –</p>
   </div>
 
-  <canvas id="canvas" width="1000" height="700"></canvas>
+  <canvas id="canvas"></canvas>
 
   <script src="script.js"></script>
 </body>
