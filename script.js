@@ -86,6 +86,8 @@ function draw() {
     ctx.fill();
     ctx.stroke();
   }
+
+  drawModulesInGenerator();
 }
 
 // Ziegelmaße
@@ -184,4 +186,42 @@ function distance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+// 👉 NEU: Module zeichnen
+function drawModulesInGenerator() {
+  if (!generatorQuad || generatorQuad.length < 4 || scaleMtoPx === 0) return;
+
+  const startX = generatorQuad[0].x + MARGIN * scaleMtoPx;
+  const startY = generatorQuad[0].y + MARGIN * scaleMtoPx;
+  const endX = generatorQuad[1].x - MARGIN * scaleMtoPx;
+  const endY = generatorQuad[3].y - MARGIN * scaleMtoPx;
+
+  const usableW = endX - startX;
+  const usableH = endY - startY;
+
+  const moduleWpx = MODULE_W * scaleMtoPx;
+  const moduleHpx = MODULE_H * scaleMtoPx;
+  const gapPx = GAP * scaleMtoPx;
+
+  const cols = Math.floor((usableW + gapPx) / (moduleWpx + gapPx));
+  const rows = Math.floor((usableH + gapPx) / (moduleHpx + gapPx));
+
+  ctx.save();
+  ctx.strokeStyle = "#ffffff";
+  ctx.lineWidth = 1;
+  ctx.globalAlpha = 0.8;
+
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = startX + c * (moduleWpx + gapPx);
+      const y = startY + r * (moduleHpx + gapPx);
+
+      ctx.beginPath();
+      ctx.rect(x, y, moduleWpx, moduleHpx);
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
 }
