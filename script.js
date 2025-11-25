@@ -176,35 +176,38 @@ function createDefaultGeneratorQuad() {
 }
 
 function drawModules() {
-  if (!generatorQuad) return;
+  if (!traufeM || !ortgangM || polygon.length < 4) return;
 
-  const tile = getTileSize();
-  const nTraufe = parseInt(tilesTraufeInput.value, 10);
-  const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
-  const traufeM = tile.traufe * nTraufe;
-  const ortgangM = tile.ortgang * nOrtgang;
+  const usableT = traufeM - 2 * MARGIN;
+  const usableO = ortgangM - 2 * MARGIN;
+  const cols = Math.floor((usableT + GAP) / (MODULE_W + GAP));
+  const rows = Math.floor((usableO + GAP) / (MODULE_H + GAP));
+  if (cols <= 0 || rows <= 0) return;
 
   const pxTraufe = distance(polygon[0], polygon[1]);
-  const pxOrtgang = distance(polygon[0], polygon[polygon.length - 2]);
+  const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
   const pxPerM = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
 
   const modW = MODULE_W * pxPerM;
   const modH = MODULE_H * pxPerM;
-  const gap = GAP * pxPerM;
+  const gapPx = GAP * pxPerM;
+  const marginX = MARGIN * pxPerM;
+  const marginY = MARGIN * pxPerM;
 
-  const [TL, TR, BR, BL] = generatorQuad;
+  // Startpunkt: polygon[0] + Rand
+  const startX = polygon[0].x + marginX;
+  const startY = polygon[polygon.length - 1].y - marginY - rows * (modH + gapPx);
 
-  const cols = Math.floor((distance(TL, TR) + gap) / (modW + gap));
-  const rows = Math.floor((distance(TR, BR) + gap) / (modH + gap));
-
-  ctx.fillStyle = "rgba(80,80,80,0.6)";
+  ctx.fillStyle = "rgba(80, 80, 80, 0.6)";
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const x = TL.x + c * (modW + gap);
-      const y = TL.y - (r + 1) * (modH + gap);
+      const x = startX + c * (modW + gapPx);
+      const y = startY + r * (modH + gapPx);
       ctx.fillRect(x, y, modW, modH);
     }
   }
+}
+
 
   ctx.strokeStyle = "green";
   ctx.lineWidth = 2;
