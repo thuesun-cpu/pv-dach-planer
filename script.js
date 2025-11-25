@@ -1,12 +1,11 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
-const fileInput = document.getElementById("fileInput");
 
+const fileInput = document.getElementById("fileInput");
 const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
 const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const info = document.getElementById("info");
-
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 
@@ -15,9 +14,18 @@ let imageLoaded = false;
 
 let polygon = [];
 let polygonClosed = false;
+
 let generatorQuad = null;
 let scaleMtoPx = 1;
+let draggingHandle = -1;
 
+const MODULE_W = 1.134;
+const MODULE_H = 1.765;
+const GAP = 0.02;
+const MARGIN = 0.30;
+const HANDLE_RADIUS = 6;
+
+// --- Bild laden
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -43,25 +51,7 @@ fileInput.addEventListener("change", (e) => {
   reader.readAsDataURL(file);
 });
 
-canvas.addEventListener("mousedown", (e) => {
-  if (!imageLoaded || polygonClosed) return;
-
-  const rect = canvas.getBoundingClientRect();
-  const pos = {
-    x: e.clientX - rect.left,
-    y: e.clientY - rect.top
-  };
-
-  if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
-    polygonClosed = true;
-    computeMeasurements();
-  } else {
-    polygon.push(pos);
-  }
-
-  draw();
-});
-
+// --- Zeichenlogik
 function draw() {
   if (!imageLoaded) return;
 
@@ -104,25 +94,45 @@ function draw() {
     ctx.fill();
     ctx.stroke();
 
+    // Ziehbare Ecken
     ctx.fillStyle = "#00ff00";
     generatorQuad.forEach(p => {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
       ctx.fill();
     });
+
+    // Modulraster
+    const marginPx = MARGIN * scaleMtoPx;
+    const gapPx = GAP * scaleMtoPx;
+    const moduleW_px = MODULE_W * scaleMtoPx;
+    const moduleH_px = MODULE_H * scaleMtoPx;
+
+    const [tl, tr, br, bl] = generatorQuad;
+
+    const usableWidth = distance(tl, tr) - 2 * marginPx;
+    const usableHeight = distance(tl, bl) - 2 * marginPx;
+
+    const cols = Math.floor((usableWidth + gapPx) / (moduleW_px + gapPx));
+    const rows = Math.floor((usableHeight + gapPx) / (moduleH_px + gapPx));
+
+    const startX = tl.x + marginPx;
+    const startY = tl.y + marginPx;
+
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const x = startX + c * (moduleW_px + gapPx);
+        const y = startY + r * (moduleH_px + gapPx);
+        ctx.strokeRect(x, y, moduleW_px, moduleH_px);
+      }
+    }
   }
 }
 
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-tileType.addEventListener("change", computeMeasurements);
-tilesTraufeInput.addEventListener("input", computeMeasurements);
-tilesOrtgangInput.addEventListener("input", computeMeasurements);
-
+// --- Funktionen
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
@@ -146,10 +156,7 @@ function computeMeasurements() {
   const ortgang = tile.ortgang * o;
   const area = traufe * ortgang;
 
-  info.textContent =
-    `Traufe: ${traufe.toFixed(2)} m, ` +
-    `Ortgang: ${ortgang.toFixed(2)} m, ` +
-    `Fläche: ${area.toFixed(2)} m²`;
+  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
 }
 
 function createGeneratorQuad() {
@@ -163,19 +170,14 @@ function createGeneratorQuad() {
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
-
   const traufePx = distance(polygon[0], polygon[1]);
   const ortgangPx = distance(polygon[0], polygon[3]);
+  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
-  const scaleTraufe = traufePx / traufeM;
-  const scaleOrtgang = ortgangPx / ortgangM;
-  scaleMtoPx = (scaleTraufe + scaleOrtgang) / 2;
-
-  const marginPx = 0.30 * scaleMtoPx;
+  const marginPx = MARGIN * scaleMtoPx;
 
   const startX = polygon[0].x + marginPx;
   const startY = polygon[0].y - ortgangPx + marginPx;
-
   const width = traufeM * scaleMtoPx;
   const height = ortgangM * scaleMtoPx;
 
@@ -187,12 +189,37 @@ function createGeneratorQuad() {
   ];
 }
 
-drawGeneratorBtn.addEventListener("click", () => {
-  createGeneratorQuad();
+// --- Events
+canvas.addEventListener("mousedown", (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+  if (generatorQuad) {
+    draggingHandle = generatorQuad.findIndex(p => distance(p, pos) < HANDLE_RADIUS + 2);
+    if (draggingHandle >= 0) return;
+  }
+
+  if (!imageLoaded || polygonClosed) return;
+
+  if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
+    polygonClosed = true;
+    computeMeasurements();
+  } else {
+    polygon.push(pos);
+  }
+
   draw();
 });
 
-clearGeneratorBtn.addEventListener("click", () => {
-  generatorQuad = null;
-  draw();
+canvas.addEventListener("mousemove", (e) => {
+  if (draggingHandle >= 0 && generatorQuad) {
+    const rect = canvas.getBoundingClientRect();
+    const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+    generatorQuad[draggingHandle] = pos;
+    draw();
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  draggingHandle = -1;
 });
