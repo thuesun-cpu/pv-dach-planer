@@ -2,6 +2,11 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 const fileInput = document.getElementById("fileInput");
 
+const tileType = document.getElementById("tileType");
+const tilesTraufeInput = document.getElementById("tilesTraufe");
+const tilesOrtgangInput = document.getElementById("tilesOrtgang");
+const info = document.getElementById("info");
+
 const image = new Image();
 let imageLoaded = false;
 
@@ -38,6 +43,7 @@ canvas.addEventListener("mousedown", (e) => {
 
   if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     polygonClosed = true;
+    computeMeasurements(); // Trigger Berechnung nach Schließen
   } else {
     polygon.push(pos);
   }
@@ -68,7 +74,6 @@ function draw() {
   }
   ctx.stroke();
 
-  // Punkte
   ctx.fillStyle = "#00bcd4";
   polygon.forEach(p => {
     ctx.beginPath();
@@ -81,4 +86,37 @@ function distance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
+}
+
+tileType.addEventListener("change", computeMeasurements);
+tilesTraufeInput.addEventListener("input", computeMeasurements);
+tilesOrtgangInput.addEventListener("input", computeMeasurements);
+
+function getTileSize() {
+  switch (tileType.value) {
+    case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
+    case "einfalzJumbo": return { traufe: 0.25, ortgang: 0.36 };
+    case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
+    case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.38 };
+    default: return null;
+  }
+}
+
+function computeMeasurements() {
+  const tile = getTileSize();
+  const t = parseInt(tilesTraufeInput.value, 10);
+  const o = parseInt(tilesOrtgangInput.value, 10);
+  if (!tile || !t || !o || !polygonClosed) {
+    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
+    return;
+  }
+
+  const traufe = tile.traufe * t;
+  const ortgang = tile.ortgang * o;
+  const area = traufe * ortgang;
+
+  info.textContent =
+    `Traufe: ${traufe.toFixed(2)} m, ` +
+    `Ortgang: ${ortgang.toFixed(2)} m, ` +
+    `Fläche: ${area.toFixed(2)} m²`;
 }
