@@ -11,15 +11,15 @@ const ctx = canvas.getContext("2d");
 
 let polygon = [];
 let isClosed = false;
-let traufeM = 0, ortgangM = 0, areaM2 = 0;
+let generatorQuad = null;
 
-// Modulmaße (m)
+// Maße
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
 const MARGIN = 0.3;
 
-// Bild laden und anzeigen
+// Bild laden
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -36,7 +36,7 @@ fileInput.addEventListener("change", (e) => {
   reader.readAsDataURL(file);
 });
 
-// Polygon per Klick setzen
+// Polygon setzen
 canvas.addEventListener("click", (e) => {
   if (!roofImage.src || isClosed) return;
 
@@ -49,6 +49,7 @@ canvas.addEventListener("click", (e) => {
   if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     isClosed = true;
     computeRoofDimensions();
+    createDefaultGeneratorQuad();
     draw();
   } else {
     polygon.push(pos);
@@ -56,17 +57,16 @@ canvas.addEventListener("click", (e) => {
   }
 });
 
-// Zurücksetzen
 resetBtn.addEventListener("click", () => reset());
 
 function reset() {
   polygon = [];
   isClosed = false;
+  generatorQuad = null;
   info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
   draw();
 }
 
-// Zeichnen
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
@@ -93,10 +93,9 @@ function draw() {
     }
   }
 
-  if (isClosed) drawModules();
+  if (generatorQuad) drawModules();
 }
 
-// Hilfsfunktionen
 function distance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -112,25 +111,6 @@ function getTileSize() {
   }
 }
 
-function computeRoofDimensions() {
-  const tile = getTileSize();
-  const nTraufe = parseInt(tilesTraufeInput.value, 10);
-  const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
-
-  if (!tile || polygon.length < 4) return;
-
-  traufeM = tile.traufe * nTraufe;
-  ortgangM = tile.ortgang * nOrtgang;
-
-  const pxTraufe = distance(polygon[0], polygon[1]);
-  const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
-  const scale = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
-  const areaPx = polygonArea(polygon);
-  areaM2 = areaPx * scale * scale;
-
-  info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
-}
-
 function polygonArea(pts) {
   let sum = 0;
   for (let i = 0; i < pts.length; i++) {
@@ -141,14 +121,38 @@ function polygonArea(pts) {
   return Math.abs(sum / 2);
 }
 
-function drawModules() {
-  if (polygon.length < 4) return;
+function computeRoofDimensions() {
+  const tile = getTileSize();
+  const nTraufe = parseInt(tilesTraufeInput.value, 10);
+  const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
+  if (!tile || polygon.length < 4) return;
+
+  const traufeM = tile.traufe * nTraufe;
+  const ortgangM = tile.ortgang * nOrtgang;
+
+  const pxTraufe = distance(polygon[0], polygon[1]);
+  const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
+  const scale = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
+  const areaPx = polygonArea(polygon);
+  const areaM2 = areaPx * scale * scale;
+
+  info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
+}
+
+function createDefaultGeneratorQuad() {
+  if (!isClosed || polygon.length < 4) {
+    generatorQuad = null;
+    return;
+  }
+
+  let minX = Math.min(...polygon.map(p => p.x));
+  let maxX = Math.max(...polygon.map(p => p.x));
+  let minY = Math.min(...polygon.map(p => p.y));
+  let maxY = Math.max(...polygon.map(p => p.y));
 
   const tile = getTileSize();
   const nTraufe = parseInt(tilesTraufeInput.value, 10);
   const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
-  if (!tile || !nTraufe || !nOrtgang) return;
-
   const traufeM = tile.traufe * nTraufe;
   const ortgangM = tile.ortgang * nOrtgang;
 
@@ -156,35 +160,56 @@ function drawModules() {
   const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
   const pxPerM = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
 
-  const usableWidthM = traufeM - 2 * MARGIN;
-  const usableHeightM = ortgangM - 2 * MARGIN;
-
-  const modW = MODULE_W + GAP;
-  const modH = MODULE_H + GAP;
-
-  const cols = Math.floor(usableWidthM / modW);
-  const rows = Math.floor(usableHeightM / modH);
-  if (cols <= 0 || rows <= 0) {
-    console.warn("Nicht genug Platz für Module");
-    return;
-  }
-
-  // Start in px
   const marginX = MARGIN * pxPerM;
   const marginY = MARGIN * pxPerM;
-  const modWPx = MODULE_W * pxPerM;
-  const modHPx = MODULE_H * pxPerM;
-  const gapPx = GAP * pxPerM;
 
-  const startX = polygon[0].x + marginX;
-  const startY = polygon[0].y - (rows * modHPx + (rows - 1) * gapPx) - marginY;
+  generatorQuad = [
+    { x: minX + marginX, y: maxY - marginY },
+    { x: maxX - marginX, y: maxY - marginY },
+    { x: maxX - marginX, y: minY + marginY },
+    { x: minX + marginX, y: minY + marginY }
+  ];
+}
+
+function drawModules() {
+  if (!generatorQuad) return;
+
+  const tile = getTileSize();
+  const nTraufe = parseInt(tilesTraufeInput.value, 10);
+  const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
+  const traufeM = tile.traufe * nTraufe;
+  const ortgangM = tile.ortgang * nOrtgang;
+
+  const pxTraufe = distance(polygon[0], polygon[1]);
+  const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
+  const pxPerM = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
+
+  const modW = MODULE_W * pxPerM;
+  const modH = MODULE_H * pxPerM;
+  const gap = GAP * pxPerM;
+
+  const [TL, TR, BR, BL] = generatorQuad;
+
+  const width = distance(TL, TR);
+  const height = distance(TR, BR);
+
+  const cols = Math.floor((width + gap) / (modW + gap));
+  const rows = Math.floor((height + gap) / (modH + gap));
 
   ctx.fillStyle = "rgba(80,80,80,0.6)";
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const x = startX + c * (modWPx + gapPx);
-      const y = startY + r * (modHPx + gapPx);
-      ctx.fillRect(x, y, modWPx, modHPx);
+      const x = TL.x + c * (modW + gap);
+      const y = TL.y - (r + 1) * (modH + gap);
+      ctx.fillRect(x, y, modW, modH);
     }
   }
+
+  // Generatorfläche umranden
+  ctx.strokeStyle = "green";
+  ctx.beginPath();
+  ctx.moveTo(TL.x, TL.y);
+  generatorQuad.forEach(p => ctx.lineTo(p.x, p.y));
+  ctx.closePath();
+  ctx.stroke();
 }
