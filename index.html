@@ -2,47 +2,25 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PV-Dach-Planer (Modulfläche in Generatorfläche)</title>
-  <link rel="stylesheet" href="style.css" />
+  <title>Minimale Dachflächenmarkierung</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      display: block;
+      margin-top: 10px;
+    }
+  </style>
 </head>
 <body>
-  <h1>PV-Dach-Planer</h1>
-
-  <div class="controls">
-    <label>
-      Dachbild wählen:
-      <input type="file" id="fileInput" accept="image/*" />
-    </label>
-
-    <label>
-      Ziegeltyp:
-      <select id="tileType">
-        <option value="">Bitte wählen ...</option>
-        <option value="einfalz">Einfalzziegel (21.5 x 33 cm)</option>
-        <option value="doppelfalz">Doppelfalz / Betonstein (30 x 33 cm)</option>
-        <option value="jumbo">Jumbo (30 x 40 cm)</option>
-      </select>
-    </label>
-
-    <label>
-      Ziegel Traufe (Anzahl):
-      <input type="number" id="tilesTraufe" value="30" min="1" />
-    </label>
-
-    <label>
-      Ziegel Ortgang (Anzahl):
-      <input type="number" id="tilesOrtgang" value="15" min="1" />
-    </label>
-
-    <button id="resetBtn">Zurücksetzen</button>
-    <div id="info">Traufe: –, Ortgang: –, Fläche: –</div>
-  </div>
-
-  <div id="canvasWrapper">
-    <img id="roofImage" src="/mnt/data/Foto Dach_1_.jpg" alt="Dachfoto" />
-    <canvas id="canvas"></canvas>
-  </div>
+  <h1>Dachfläche markieren</h1>
+  <input type="file" id="fileInput" accept="image/*" />
+  <p>Klicke ins Bild, um Punkte zu setzen. Klicke auf den Startpunkt, um zu schließen.</p>
+  <canvas id="canvas"></canvas>
 
   <script src="script.js"></script>
 </body>
