@@ -1,22 +1,23 @@
 // --- Canvas & DOM-Elemente --------------------------------------------------
 
-const canvas = document.getElementById("canvas");
+const canvas = document.getElementById("polygonCanvas");
 const ctx = canvas.getContext("2d");
 
 const fileInput = document.getElementById("fileInput");
-const resetPolygonBtn = document.getElementById("resetPolygonBtn");
+const resetPolygonBtn = document.getElementById("resetBtn");
 
 const dachtypSelect = document.getElementById("dachtyp");
-const tilesTraufeInput = document.getElementById("tilesTraufe");
-const tilesOrtgangInput = document.getElementById("tilesOrtgang");
-const infoText = document.getElementById("infoText");
+const tilesTraufeInput = document.getElementById("ziegelTraufe");
+const tilesOrtgangInput = document.getElementById("ziegelOrtgang");
+const infoText = document.getElementById("measureInfo");
 
-const orientationSelect = document.getElementById("orientation");
-const opacityRange = document.getElementById("opacityRange");
+const orientationSelect = document.getElementById("ausrichtung");
+const opacityRange = document.getElementById("modOpacity");
 const drawModulesBtn = document.getElementById("drawModulesBtn");
 const clearModulesBtn = document.getElementById("clearModulesBtn");
 const moduleInfo = document.getElementById("moduleInfo");
-const pointsInfo = document.getElementById("pointsInfo");
+const pointsInfo = document.getElementById("pointCount");
+
 
 // --- Bild --------------------------------------------------------------------
 
