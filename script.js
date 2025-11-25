@@ -8,6 +8,7 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const info = document.getElementById("info");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
+const moduleOpacityInput = document.getElementById("moduleOpacity");
 
 const image = new Image();
 let imageLoaded = false;
@@ -16,6 +17,7 @@ let polygon = [];
 let polygonClosed = false;
 
 let generatorQuad = null;
+let draggingGeneratorIndex = -1;
 let scaleMtoPx = 1;
 
 const MODULE_W = 1.134;
@@ -76,7 +78,7 @@ function draw() {
   if (generatorQuad) {
     ctx.strokeStyle = "#00ff00";
     ctx.lineWidth = 2;
-    ctx.fillStyle = "rgba(0, 255, 0, 0.2)";
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
     ctx.beginPath();
     ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
     for (let i = 1; i < 4; i++) {
@@ -85,6 +87,14 @@ function draw() {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
+    // Ziehbare Handles
+    ctx.fillStyle = "#ffffff";
+    generatorQuad.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   drawModulesInGenerator();
@@ -162,11 +172,19 @@ clearGeneratorBtn.addEventListener("click", () => {
   draw();
 });
 
-// Polygon zeichnen
 canvas.addEventListener("mousedown", (e) => {
-  if (!imageLoaded || polygonClosed) return;
   const rect = canvas.getBoundingClientRect();
   const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+
+  if (generatorQuad) {
+    const idx = findHandleIndex(generatorQuad, pos, HANDLE_RADIUS + 4);
+    if (idx >= 0) {
+      draggingGeneratorIndex = idx;
+      return;
+    }
+  }
+
+  if (!imageLoaded || polygonClosed) return;
 
   if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     polygonClosed = true;
@@ -178,9 +196,24 @@ canvas.addEventListener("mousedown", (e) => {
   draw();
 });
 
+canvas.addEventListener("mousemove", (e) => {
+  if (draggingGeneratorIndex === -1) return;
+  const rect = canvas.getBoundingClientRect();
+  const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  if (generatorQuad && generatorQuad[draggingGeneratorIndex]) {
+    generatorQuad[draggingGeneratorIndex] = pos;
+    draw();
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  draggingGeneratorIndex = -1;
+});
+
 tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
+moduleOpacityInput.addEventListener("input", draw);
 
 function distance(a, b) {
   const dx = a.x - b.x;
@@ -188,7 +221,15 @@ function distance(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// 👉 NEU: Module zeichnen
+function findHandleIndex(points, pos, radius) {
+  for (let i = 0; i < points.length; i++) {
+    const dx = points[i].x - pos.x;
+    const dy = points[i].y - pos.y;
+    if (dx * dx + dy * dy <= radius * radius) return i;
+  }
+  return -1;
+}
+
 function drawModulesInGenerator() {
   if (!generatorQuad || generatorQuad.length < 4 || scaleMtoPx === 0) return;
 
@@ -207,19 +248,17 @@ function drawModulesInGenerator() {
   const cols = Math.floor((usableW + gapPx) / (moduleWpx + gapPx));
   const rows = Math.floor((usableH + gapPx) / (moduleHpx + gapPx));
 
+  const opacity = parseFloat(moduleOpacityInput.value);
+
   ctx.save();
-  ctx.strokeStyle = "#ffffff";
+  ctx.strokeStyle = `rgba(0, 0, 0, ${opacity})`;
   ctx.lineWidth = 1;
-  ctx.globalAlpha = 0.8;
 
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const x = startX + c * (moduleWpx + gapPx);
       const y = startY + r * (moduleHpx + gapPx);
-
-      ctx.beginPath();
-      ctx.rect(x, y, moduleWpx, moduleHpx);
-      ctx.stroke();
+      ctx.strokeRect(x, y, moduleWpx, moduleHpx);
     }
   }
 
