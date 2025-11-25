@@ -1,6 +1,3 @@
-const canvas = document.getElementById("canvas");
-const ctx = canvas.getContext("2d");
-
 const fileInput = document.getElementById("fileInput");
 const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
@@ -8,12 +5,12 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const resetBtn = document.getElementById("resetBtn");
 const info = document.getElementById("info");
 
-let image = new Image();
-let imageLoaded = false;
+const roofImage = document.getElementById("roofImage");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
 
 let polygon = [];
 let isClosed = false;
-
 let traufeM = 0, ortgangM = 0, areaM2 = 0;
 
 // Modulmaße (m)
@@ -22,25 +19,26 @@ const MODULE_H = 1.765;
 const GAP = 0.02;
 const MARGIN = 0.3;
 
+// Bild laden und anzeigen
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
   reader.onload = (event) => {
-    image.onload = () => {
-      canvas.width = image.width;
-      canvas.height = image.height;
-      imageLoaded = true;
+    roofImage.onload = () => {
+      canvas.width = roofImage.width;
+      canvas.height = roofImage.height;
       reset();
     };
-    image.src = event.target.result;
+    roofImage.src = event.target.result;
   };
   reader.readAsDataURL(file);
 });
 
+// Polygon per Klick setzen
 canvas.addEventListener("click", (e) => {
-  if (!imageLoaded || isClosed) return;
+  if (!roofImage.src || isClosed) return;
 
   const rect = canvas.getBoundingClientRect();
   const pos = {
@@ -58,46 +56,47 @@ canvas.addEventListener("click", (e) => {
   }
 });
 
+// Zurücksetzen
 resetBtn.addEventListener("click", () => reset());
 
 function reset() {
   polygon = [];
   isClosed = false;
-  draw();
   info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
+  draw();
 }
 
+// Zeichnen
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (imageLoaded) ctx.drawImage(image, 0, 0);
 
-  // Polygon
   if (polygon.length) {
     ctx.beginPath();
     ctx.moveTo(polygon[0].x, polygon[0].y);
-    polygon.forEach(p => ctx.lineTo(p.x, p.y));
+    for (let i = 1; i < polygon.length; i++) {
+      ctx.lineTo(polygon[i].x, polygon[i].y);
+    }
     if (isClosed) {
       ctx.closePath();
-      ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+      ctx.fillStyle = "rgba(255, 0, 0, 0.3)";
       ctx.fill();
     }
     ctx.strokeStyle = "red";
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    polygon.forEach(p => {
+    for (const p of polygon) {
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
       ctx.fillStyle = "#00bcd4";
       ctx.fill();
-    });
+    }
   }
 
-  if (isClosed) {
-    drawModules();
-  }
+  if (isClosed) drawModules();
 }
 
+// Hilfsfunktionen
 function distance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
@@ -105,8 +104,7 @@ function distance(a, b) {
 }
 
 function getTileSize() {
-  const type = tileType.value;
-  switch (type) {
+  switch (tileType.value) {
     case "einfalz": return { traufe: 0.215, ortgang: 0.33 };
     case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
     case "jumbo": return { traufe: 0.30, ortgang: 0.40 };
@@ -115,26 +113,20 @@ function getTileSize() {
 }
 
 function computeRoofDimensions() {
-  const size = getTileSize();
+  const tile = getTileSize();
   const nTraufe = parseInt(tilesTraufeInput.value, 10);
   const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
 
-  if (!size || !nTraufe || !nOrtgang || polygon.length < 4) {
-    info.textContent = "Bitte gültige Werte eingeben.";
-    return;
-  }
+  if (!tile || polygon.length < 4) return;
 
-  traufeM = nTraufe * size.traufe;
-  ortgangM = nOrtgang * size.ortgang;
+  traufeM = tile.traufe * nTraufe;
+  ortgangM = tile.ortgang * nOrtgang;
 
   const pxTraufe = distance(polygon[0], polygon[1]);
   const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
-  const scaleT = traufeM / pxTraufe;
-  const scaleO = ortgangM / pxOrtgang;
-  const mPerPx = (scaleT + scaleO) / 2;
-
+  const scale = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
   const areaPx = polygonArea(polygon);
-  areaM2 = areaPx * mPerPx * mPerPx;
+  areaM2 = areaPx * scale * scale;
 
   info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
 }
@@ -150,27 +142,24 @@ function polygonArea(pts) {
 }
 
 function drawModules() {
-  const usableTraufe = traufeM - 2 * MARGIN;
-  const usableOrtgang = ortgangM - 2 * MARGIN;
-  const cols = Math.floor((usableTraufe + GAP) / (MODULE_W + GAP));
-  const rows = Math.floor((usableOrtgang + GAP) / (MODULE_H + GAP));
-
+  const usableT = traufeM - 2 * MARGIN;
+  const usableO = ortgangM - 2 * MARGIN;
+  const cols = Math.floor((usableT + GAP) / (MODULE_W + GAP));
+  const rows = Math.floor((usableO + GAP) / (MODULE_H + GAP));
   if (cols <= 0 || rows <= 0) return;
 
   const pxTraufe = distance(polygon[0], polygon[1]);
   const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
-  const scaleT = traufeM / pxTraufe;
-  const scaleO = ortgangM / pxOrtgang;
-  const pxPerM = (scaleT + scaleO) / 2;
+  const pxPerM = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
 
-  const marginX = MARGIN * pxPerM;
-  const marginY = MARGIN * pxPerM;
   const modW = MODULE_W * pxPerM;
   const modH = MODULE_H * pxPerM;
   const gapPx = GAP * pxPerM;
+  const marginX = MARGIN * pxPerM;
+  const marginY = MARGIN * pxPerM;
 
   const startX = polygon[0].x + marginX;
-  const startY = polygon[polygon.length - 1].y - marginY - rows * modH - (rows - 1) * gapPx;
+  const startY = polygon[polygon.length - 1].y - marginY - rows * (modH + gapPx);
 
   ctx.fillStyle = "rgba(80,80,80,0.6)";
   for (let r = 0; r < rows; r++) {
