@@ -3,195 +3,175 @@ const ctx = canvas.getContext("2d");
 
 const fileInput = document.getElementById("fileInput");
 const tileType = document.getElementById("tileType");
-const traufeInput = document.getElementById("traufe");
-const ortgangInput = document.getElementById("ortgang");
-const info = document.getElementById("info");
-const createBtn = document.getElementById("createGenerator");
-const clearBtn = document.getElementById("clearGenerator");
-const transparencySlider = document.getElementById("moduleTransparency");
+const traufeCount = document.getElementById("traufeCount");
+const ortgangCount = document.getElementById("ortgangCount");
+const showGenBtn = document.getElementById("showGenBtn");
+const clearGenBtn = document.getElementById("clearGenBtn");
+const measurements = document.getElementById("measurements");
+const opacitySlider = document.getElementById("opacitySlider");
 
-let img = new Image();
+let image = new Image();
 let imgLoaded = false;
 
 let polygon = [];
 let polygonClosed = false;
 
-let generatorQuad = null;
-let draggingIdx = -1;
-let isDragging = false;
+let genQuad = null; // Generatorfläche mit 4 Punkten
+let draggingIndex = -1;
 
-// Modulkonstanten (m)
-const MODULE_W = 1.134;
-const MODULE_H = 1.765;
+const HANDLE_SIZE = 8;
+
+// Modulmaße
+const MODULE_WIDTH = 1.134;
+const MODULE_HEIGHT = 1.765;
 const GAP = 0.02;
 const MARGIN = 0.30;
 
-// --- Ziegelgrößen ---
-function getTileSize() {
-  switch (tileType.value) {
-    case "einfalz21x33": return { w: 0.215, h: 0.33 };
-    case "einfalz25x36": return { w: 0.25, h: 0.36 };
-    case "doppelfalz30x33": return { w: 0.30, h: 0.33 };
-    case "doppelfalz30x38": return { w: 0.30, h: 0.38 };
-    default: return null;
-  }
-}
+let scale = 1;
+let pxPerM = 1;
 
-// --- Bild laden ---
-fileInput.addEventListener("change", (e) => {
+fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
+
   const reader = new FileReader();
-  reader.onload = () => {
-    img.onload = () => {
+  reader.onload = function (ev) {
+    image.onload = () => {
       imgLoaded = true;
-      canvas.width = img.width;
-      canvas.height = img.height;
-      draw();
+      canvas.width = image.width;
+      canvas.height = image.height;
+      redraw();
     };
-    img.src = reader.result;
+    image.src = ev.target.result;
   };
   reader.readAsDataURL(file);
 });
 
-// --- Generatorfläche erstellen ---
-createBtn.addEventListener("click", () => {
-  const tile = getTileSize();
-  if (!tile) return alert("Ziegeltyp wählen!");
+canvas.addEventListener("click", e => {
+  if (!imgLoaded || polygonClosed) return;
+  const pos = getMousePos(e);
 
-  const traufe = parseInt(traufeInput.value, 10);
-  const ortgang = parseInt(ortgangInput.value, 10);
-  const traufeM = traufe * tile.w;
-  const ortgangM = ortgang * tile.h;
-
-  const scaleX = canvas.width / traufeM;
-  const scaleY = canvas.height / ortgangM;
-
-  const pxPerM = Math.min(scaleX, scaleY);
-
-  const pxTraufe = traufeM * pxPerM;
-  const pxOrtgang = ortgangM * pxPerM;
-
-  const x0 = 100;
-  const y0 = 100;
-  const x1 = x0 + pxTraufe;
-  const y1 = y0 + pxOrtgang;
-
-  generatorQuad = [
-    { x: x0, y: y0 },
-    { x: x1, y: y0 },
-    { x: x1, y: y1 },
-    { x: x0, y: y1 }
-  ];
-
-  generatorQuad.scale = pxPerM;
-  generatorQuad.traufeM = traufeM;
-  generatorQuad.ortgangM = ortgangM;
-
-  draw();
+  if (polygon.length >= 3 && isNear(pos, polygon[0])) {
+    polygonClosed = true;
+    updateMeasurements();
+    redraw();
+  } else {
+    polygon.push(pos);
+    redraw();
+  }
 });
 
-// --- Generatorfläche löschen ---
-clearBtn.addEventListener("click", () => {
-  generatorQuad = null;
-  draw();
+canvas.addEventListener("mousedown", e => {
+  if (!genQuad) return;
+  const pos = getMousePos(e);
+  draggingIndex = genQuad.findIndex(p => isNear(p, pos));
 });
 
-// --- Zeichnen ---
-function draw() {
+canvas.addEventListener("mousemove", e => {
+  if (draggingIndex === -1) return;
+  const pos = getMousePos(e);
+  genQuad[draggingIndex] = pos;
+  redraw();
+});
+
+canvas.addEventListener("mouseup", () => {
+  draggingIndex = -1;
+});
+
+function getMousePos(evt) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: evt.clientX - rect.left,
+    y: evt.clientY - rect.top
+  };
+}
+
+function isNear(p1, p2, r = 10) {
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y) < r;
+}
+
+function updateMeasurements() {
+  const tileSizes = {
+    einfalz: { w: 0.21, h: 0.33 },
+    einfalzjumbo: { w: 0.25, h: 0.36 },
+    doppelfalz: { w: 0.30, h: 0.33 },
+    doppelfalzjumbo: { w: 0.30, h: 0.38 }
+  };
+
+  const type = tileType.value;
+  const tile = tileSizes[type];
+  if (!tile || polygon.length < 2) return;
+
+  const traufe = parseInt(traufeCount.value, 10);
+  const ortgang = parseInt(ortgangCount.value, 10);
+
+  const traufeM = tile.w * traufe;
+  const ortgangM = tile.h * ortgang;
+  pxPerM = distance(polygon[0], polygon[1]) / traufeM;
+
+  const area = traufeM * ortgangM;
+  measurements.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
+}
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function redraw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (imgLoaded) ctx.drawImage(img, 0, 0);
+  if (imgLoaded) ctx.drawImage(image, 0, 0);
 
-  if (generatorQuad) {
-    drawGeneratorArea();
+  // Polygon zeichnen
+  if (polygon.length) {
+    ctx.strokeStyle = "green";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(polygon[0].x, polygon[0].y);
+    for (let i = 1; i < polygon.length; i++) {
+      ctx.lineTo(polygon[i].x, polygon[i].y);
+    }
+    if (polygonClosed) ctx.closePath();
+    ctx.stroke();
+
+    ctx.fillStyle = "lime";
+    for (let pt of polygon) {
+      ctx.beginPath();
+      ctx.arc(pt.x, pt.y, HANDLE_SIZE, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // Generatorfläche zeichnen
+  if (genQuad) {
+    drawGenerator();
     drawModules();
   }
 }
 
-// --- Generatorfläche zeichnen ---
-function drawGeneratorArea() {
+function drawGenerator() {
+  ctx.save();
+  ctx.strokeStyle = "#00ff00";
+  ctx.lineWidth = 2;
+  ctx.fillStyle = "rgba(255,255,255,0.15)";
   ctx.beginPath();
-  ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
+  ctx.moveTo(genQuad[0].x, genQuad[0].y);
   for (let i = 1; i < 4; i++) {
-    ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
+    ctx.lineTo(genQuad[i].x, genQuad[i].y);
   }
   ctx.closePath();
-  ctx.fillStyle = "rgba(255,255,255,0.3)";
   ctx.fill();
-  ctx.strokeStyle = "lime";
-  ctx.lineWidth = 2;
   ctx.stroke();
 
-  generatorQuad.forEach(p => {
+  ctx.fillStyle = "#00ff00";
+  genQuad.forEach(p => {
     ctx.beginPath();
-    ctx.arc(p.x, p.y, 6, 0, 2 * Math.PI);
-    ctx.fillStyle = "lime";
+    ctx.arc(p.x, p.y, HANDLE_SIZE, 0, Math.PI * 2);
     ctx.fill();
   });
-}
 
-// --- Module zeichnen ---
-function drawModules() {
-  const alpha = parseFloat(transparencySlider.value);
-  const g = generatorQuad;
-  const pxPerM = g.scale;
-
-  const marginX = MARGIN * pxPerM;
-  const marginY = MARGIN * pxPerM;
-
-  const innerTL = {
-    x: g[0].x + marginX,
-    y: g[0].y + marginY
-  };
-  const innerTR = {
-    x: g[1].x - marginX,
-    y: g[1].y + marginY
-  };
-  const innerBR = {
-    x: g[2].x - marginX,
-    y: g[2].y - marginY
-  };
-  const innerBL = {
-    x: g[3].x + marginX,
-    y: g[3].y - marginY
-  };
-
-  const traufeM = g.traufeM - 2 * MARGIN;
-  const ortgangM = g.ortgangM - MARGIN; // oben Rand
-
-  const cols = Math.floor((traufeM + GAP) / (MODULE_W + GAP));
-  const rows = Math.floor((ortgangM + GAP) / (MODULE_H + GAP));
-
-  info.textContent = `Traufe: ${g.traufeM.toFixed(2)} m, Ortgang: ${g.ortgangM.toFixed(2)} m, Fläche: ${(g.traufeM * g.ortgangM).toFixed(2)} m²`;
-
-  ctx.globalAlpha = alpha;
-  for (let r = 0; r < rows; r++) {
-    const tY0 = r / rows;
-    const tY1 = (r + 1) / rows;
-    for (let c = 0; c < cols; c++) {
-      const tX0 = c / cols;
-      const tX1 = (c + 1) / cols;
-
-      const a = lerp(lerp(innerTL, innerBL, tY0), lerp(innerTR, innerBR, tY0), tX0);
-      const b = lerp(lerp(innerTL, innerBL, tY0), lerp(innerTR, innerBR, tY0), tX1);
-      const d = lerp(lerp(innerTL, innerBL, tY1), lerp(innerTR, innerBR, tY1), tX0);
-      const e = lerp(lerp(innerTL, innerBL, tY1), lerp(innerTR, innerBR, tY1), tX1);
-
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(e.x, e.y);
-      ctx.lineTo(d.x, d.y);
-      ctx.closePath();
-      ctx.fillStyle = "black";
-      ctx.fill();
-
-      ctx.strokeStyle = "white";
-      ctx.lineWidth = 1;
-      ctx.stroke();
-    }
-  }
-  ctx.globalAlpha = 1;
+  ctx.restore();
 }
 
 function lerp(a, b, t) {
@@ -200,3 +180,82 @@ function lerp(a, b, t) {
     y: a.y + (b.y - a.y) * t
   };
 }
+
+function drawModules() {
+  const alpha = parseFloat(opacitySlider.value);
+  const modW = MODULE_WIDTH;
+  const modH = MODULE_HEIGHT;
+
+  const pxW = (modW + GAP) * pxPerM;
+  const pxH = (modH + GAP) * pxPerM;
+
+  const topLeft = genQuad[0];
+  const topRight = genQuad[1];
+  const bottomRight = genQuad[2];
+  const bottomLeft = genQuad[3];
+
+  // Berechne nutzbare Höhe
+  const ortgangM = parseInt(ortgangCount.value) * 0.33;
+  const usableHeightM = ortgangM - MARGIN;
+  const numRows = Math.floor((usableHeightM + GAP) / (MODULE_HEIGHT + GAP));
+
+  const traufeM = parseInt(traufeCount.value) * 0.21;
+  const usableWidthM = traufeM - MARGIN;
+  const numCols = Math.floor((usableWidthM + GAP) / (MODULE_WIDTH + GAP));
+
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = "#ffffff";
+  ctx.fillStyle = "#000000";
+
+  for (let r = 0; r < numRows; r++) {
+    for (let c = 0; c < numCols; c++) {
+      const rowT = (r * (MODULE_HEIGHT + GAP) + MARGIN) / ortgangM;
+      const rowT2 = ((r + 1) * (MODULE_HEIGHT + GAP) + MARGIN) / ortgangM;
+      const colS = (c * (MODULE_WIDTH + GAP) + MARGIN) / traufeM;
+      const colS2 = ((c + 1) * (MODULE_WIDTH + GAP) + MARGIN) / traufeM;
+
+      const a = lerp(lerp(topLeft, bottomLeft, rowT), lerp(topRight, bottomRight, rowT), colS);
+      const b = lerp(lerp(topLeft, bottomLeft, rowT), lerp(topRight, bottomRight, rowT), colS2);
+      const c1 = lerp(lerp(topLeft, bottomLeft, rowT2), lerp(topRight, bottomRight, rowT2), colS2);
+      const d = lerp(lerp(topLeft, bottomLeft, rowT2), lerp(topRight, bottomRight, rowT2), colS);
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c1.x, c1.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+showGenBtn.addEventListener("click", () => {
+  if (!polygonClosed) return;
+  const bounds = {
+    xMin: Math.min(...polygon.map(p => p.x)),
+    xMax: Math.max(...polygon.map(p => p.x)),
+    yMin: Math.min(...polygon.map(p => p.y)),
+    yMax: Math.max(...polygon.map(p => p.y))
+  };
+
+  const marginPx = MARGIN * pxPerM;
+
+  genQuad = [
+    { x: bounds.xMin + marginPx, y: bounds.yMin + marginPx },
+    { x: bounds.xMax - marginPx, y: bounds.yMin + marginPx },
+    { x: bounds.xMax - marginPx, y: bounds.yMax - marginPx },
+    { x: bounds.xMin + marginPx, y: bounds.yMax - marginPx }
+  ];
+
+  redraw();
+});
+
+clearGenBtn.addEventListener("click", () => {
+  genQuad = null;
+  redraw();
+});
