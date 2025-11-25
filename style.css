@@ -10,8 +10,9 @@ h1 {
 .controls {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 15px;
   margin-bottom: 10px;
+  align-items: flex-end;
 }
 
 label {
@@ -21,12 +22,21 @@ label {
 }
 
 #canvasWrapper {
-  max-width: 100%;
-  overflow: auto;
+  position: relative;
+  display: inline-block;
   border: 1px solid #ccc;
+  max-width: 100%;
+}
+
+#roofImage {
+  display: block;
+  max-width: 100%;
+  height: auto;
 }
 
 canvas {
-  display: block;
-  max-width: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
 }
