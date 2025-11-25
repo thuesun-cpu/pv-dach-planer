@@ -10,6 +10,8 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 let generatorQuad = null;
+let polygon = [];
+let polygonClosed = false;
 let draggingIndex = -1;
 let traufeM = 0;
 let ortgangM = 0;
@@ -23,7 +25,22 @@ const MARGIN = 0.3;
 
 canvas.addEventListener("mousedown", (e) => {
   const pos = getMousePos(e);
-  draggingIndex = findHandleIndex(generatorQuad, pos, 10);
+
+  // Teste Generatorpunkte
+  if (generatorQuad) {
+    draggingIndex = findHandleIndex(generatorQuad, pos, 10);
+    if (draggingIndex >= 0) return;
+  }
+
+  // Dachfläche setzen
+  if (!polygonClosed) {
+    if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
+      polygonClosed = true;
+    } else {
+      polygon.push(pos);
+    }
+    draw();
+  }
 });
 
 canvas.addEventListener("mousemove", (e) => {
@@ -43,7 +60,11 @@ fileInput.addEventListener("change", (e) => {
     roofImage.onload = () => {
       canvas.width = roofImage.width;
       canvas.height = roofImage.height;
-      generatorQuad = null; // ❗️NICHT sofort erzeugen
+
+      polygon = [];
+      polygonClosed = false;
+      generatorQuad = null;
+
       draw();
     };
     roofImage.src = event.target.result;
@@ -52,6 +73,8 @@ fileInput.addEventListener("change", (e) => {
 });
 
 resetBtn.addEventListener("click", () => {
+  polygon = [];
+  polygonClosed = false;
   generatorQuad = null;
   traufeM = 0;
   ortgangM = 0;
@@ -81,125 +104,4 @@ function distance(a, b) {
   const dx = a.x - b.x;
   const dy = a.y - b.y;
   return Math.sqrt(dx * dx + dy * dy);
-}
-
-function computeMeasurements() {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value, 10);
-  const o = parseInt(tilesOrtgangInput.value, 10);
-  if (!tile || !t || !o) return;
-
-  traufeM = tile.traufe * t;
-  ortgangM = tile.ortgang * o;
-  areaM2 = traufeM * ortgangM;
-
-  info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
-
-  initGeneratorQuad(); // ✅ Erst jetzt erstellen
-  draw();
-}
-
-function getTileSize() {
-  switch (tileType.value) {
-    case "einfalz": return { traufe: 0.215, ortgang: 0.33 };
-    case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
-    case "jumbo": return { traufe: 0.30, ortgang: 0.40 };
-    default: return null;
-  }
-}
-
-function initGeneratorQuad() {
-  const w = canvas.width;
-  const h = canvas.height;
-  generatorQuad = [
-    { x: w * 0.2, y: h * 0.2 },
-    { x: w * 0.8, y: h * 0.2 },
-    { x: w * 0.8, y: h * 0.8 },
-    { x: w * 0.2, y: h * 0.8 }
-  ];
-}
-
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  drawGeneratorQuad();
-  if (generatorQuad && traufeM && ortgangM) {
-    drawModulesWithinGenerator();
-  }
-}
-
-function drawGeneratorQuad() {
-  if (!generatorQuad) return;
-  ctx.strokeStyle = "green";
-  ctx.lineWidth = 2;
-  ctx.beginPath();
-  ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
-  for (let i = 1; i < 4; i++) ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
-  ctx.closePath();
-  ctx.stroke();
-
-  ctx.fillStyle = "#00ff7f";
-  generatorQuad.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-function lerp(a, b, t) {
-  return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
-}
-
-function drawModulesWithinGenerator() {
-  const pxPerM_T = distance(generatorQuad[0], generatorQuad[1]) / traufeM;
-  const pxPerM_O = distance(generatorQuad[0], generatorQuad[3]) / ortgangM;
-  const pxPerM = (pxPerM_T + pxPerM_O) / 2;
-
-  const modW = MODULE_W * pxPerM;
-  const modH = MODULE_H * pxPerM;
-  const gap = GAP * pxPerM;
-
-  const q = generatorQuad;
-  const marginT = MARGIN / traufeM;
-  const marginO = MARGIN / ortgangM;
-
-  const innerTL = lerp(lerp(q[0], q[1], marginT), lerp(q[0], q[3], marginO), 0.5);
-  const innerTR = lerp(lerp(q[1], q[0], marginT), lerp(q[1], q[2], marginO), 0.5);
-  const innerBR = lerp(lerp(q[2], q[1], marginT), lerp(q[2], q[3], marginO), 0.5);
-  const innerBL = lerp(lerp(q[3], q[0], marginT), lerp(q[3], q[2], marginO), 0.5);
-
-  const cols = Math.floor((traufeM - 2 * MARGIN + GAP) / (MODULE_W + GAP));
-  const rows = Math.floor((ortgangM - 2 * MARGIN + GAP) / (MODULE_H + GAP));
-
-  ctx.fillStyle = "rgba(80,80,80,0.6)";
-  ctx.strokeStyle = "white";
-  ctx.lineWidth = 1;
-
-  for (let r = 0; r < rows; r++) {
-    const v0 = r / rows;
-    const v1 = (r + 1) / rows;
-
-    const leftTop = lerp(innerTL, innerBL, v0);
-    const rightTop = lerp(innerTR, innerBR, v0);
-    const leftBottom = lerp(innerTL, innerBL, v1);
-    const rightBottom = lerp(innerTR, innerBR, v1);
-
-    for (let c = 0; c < cols; c++) {
-      const u0 = c / cols;
-      const u1 = (c + 1) / cols;
-
-      const p1 = lerp(leftTop, rightTop, u0);
-      const p2 = lerp(leftTop, rightTop, u1);
-      const p3 = lerp(leftBottom, rightBottom, u1);
-      const p4 = lerp(leftBottom, rightBottom, u0);
-
-      ctx.beginPath();
-      ctx.moveTo(p1.x, p1.y);
-      ctx.lineTo(p2.x, p2.y);
-      ctx.lineTo(p3.x, p3.y);
-      ctx.lineTo(p4.x, p4.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
 }
