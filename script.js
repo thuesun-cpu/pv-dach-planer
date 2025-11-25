@@ -43,7 +43,7 @@ fileInput.addEventListener("change", (e) => {
     roofImage.onload = () => {
       canvas.width = roofImage.width;
       canvas.height = roofImage.height;
-      initGeneratorQuad();
+      generatorQuad = null; // ❗️NICHT sofort erzeugen
       draw();
     };
     roofImage.src = event.target.result;
@@ -52,7 +52,11 @@ fileInput.addEventListener("change", (e) => {
 });
 
 resetBtn.addEventListener("click", () => {
-  initGeneratorQuad();
+  generatorQuad = null;
+  traufeM = 0;
+  ortgangM = 0;
+  areaM2 = 0;
+  info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
   draw();
 });
 
@@ -87,10 +91,11 @@ function computeMeasurements() {
 
   traufeM = tile.traufe * t;
   ortgangM = tile.ortgang * o;
-
   areaM2 = traufeM * ortgangM;
 
   info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
+
+  initGeneratorQuad(); // ✅ Erst jetzt erstellen
   draw();
 }
 
@@ -107,10 +112,10 @@ function initGeneratorQuad() {
   const w = canvas.width;
   const h = canvas.height;
   generatorQuad = [
-    { x: w * 0.2, y: h * 0.2 }, // TL
-    { x: w * 0.8, y: h * 0.2 }, // TR
-    { x: w * 0.8, y: h * 0.8 }, // BR
-    { x: w * 0.2, y: h * 0.8 }  // BL
+    { x: w * 0.2, y: h * 0.2 },
+    { x: w * 0.8, y: h * 0.2 },
+    { x: w * 0.8, y: h * 0.8 },
+    { x: w * 0.2, y: h * 0.8 }
   ];
 }
 
@@ -152,17 +157,15 @@ function drawModulesWithinGenerator() {
   const modW = MODULE_W * pxPerM;
   const modH = MODULE_H * pxPerM;
   const gap = GAP * pxPerM;
-  const margin = MARGIN * pxPerM;
 
   const q = generatorQuad;
+  const marginT = MARGIN / traufeM;
+  const marginO = MARGIN / ortgangM;
 
-  const innerTL = {
-    x: q[0].x + (q[1].x - q[0].x) * (MARGIN / traufeM) + (q[3].x - q[0].x) * (MARGIN / ortgangM),
-    y: q[0].y + (q[1].y - q[0].y) * (MARGIN / traufeM) + (q[3].y - q[0].y) * (MARGIN / ortgangM),
-  };
-  const innerTR = lerp(q[1], q[2], MARGIN / ortgangM);
-  const innerBR = lerp(q[2], q[3], MARGIN / traufeM);
-  const innerBL = lerp(q[3], q[0], MARGIN / ortgangM);
+  const innerTL = lerp(lerp(q[0], q[1], marginT), lerp(q[0], q[3], marginO), 0.5);
+  const innerTR = lerp(lerp(q[1], q[0], marginT), lerp(q[1], q[2], marginO), 0.5);
+  const innerBR = lerp(lerp(q[2], q[1], marginT), lerp(q[2], q[3], marginO), 0.5);
+  const innerBL = lerp(lerp(q[3], q[0], marginT), lerp(q[3], q[2], marginO), 0.5);
 
   const cols = Math.floor((traufeM - 2 * MARGIN + GAP) / (MODULE_W + GAP));
   const rows = Math.floor((ortgangM - 2 * MARGIN + GAP) / (MODULE_H + GAP));
