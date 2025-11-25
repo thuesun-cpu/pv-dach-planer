@@ -2,57 +2,48 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>PV-Dachflächenmarkierung</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PV-Dach-Planer</title>
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 20px;
-    }
     canvas {
       border: 1px solid #ccc;
       display: block;
       margin-top: 10px;
-      max-width: 100%;
-    }
-    img {
-      display: none;
     }
   </style>
 </head>
 <body>
-  <h3>Dachfläche markieren</h3>
+  <h1>PV-Dach-Planer</h1>
 
-  <input type="file" id="fileInput" accept="image/*" />
+  <label>Bild auswählen:
+    <input type="file" id="fileInput" accept="image/*" />
+  </label>
 
-  <div>
-    <label>Ziegeltyp:</label>
+  <br><br>
+
+  <label>Ziegeltyp:
     <select id="tileType">
       <option value="">Bitte wählen …</option>
-      <option value="einfalz">Einfalzziegel 21 x 33 cm</option>
-      <option value="einfalzJumbo">Einfalz Jumbo 25 x 36 cm</option>
-      <option value="doppelfalz">Doppelfalz 30 x 33 cm</option>
-      <option value="doppelfalzJumbo">Doppelfalz Jumbo 30 x 38 cm</option>
+      <option value="einfalz">Einfalzziegel 21x33 cm</option>
+      <option value="einfalzJumbo">Einfalz Jumbo 25x36 cm</option>
+      <option value="doppelfalz">Doppelfalz 30x33 cm</option>
+      <option value="doppelfalzJumbo">Doppelfalz Jumbo 30x38 cm</option>
     </select>
-  </div>
+  </label>
 
-  <div>
-    <label>Anzahl Ziegel Traufe:</label>
+  <br><br>
+
+  <label>Ziegel Traufe:
     <input type="number" id="tilesTraufe" value="30" min="1" />
-  </div>
+  </label>
 
-  <div>
-    <label>Anzahl Ziegel Ortgang:</label>
+  <label>Ziegel Ortgang:
     <input type="number" id="tilesOrtgang" value="15" min="1" />
-  </div>
+  </label>
 
-  <p>Klicke ins Bild, um Punkte zu setzen. Klicke auf den Startpunkt, um zu schließen.</p>
   <p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
 
-  <div>
-    <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
-    <button id="clearGeneratorBtn">Generatorfläche löschen</button>
-  </div>
+  <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
+  <button id="clearGeneratorBtn">Generatorfläche löschen</button>
 
   <canvas id="canvas"></canvas>
 
