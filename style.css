@@ -38,5 +38,5 @@ canvas {
   position: absolute;
   top: 0;
   left: 0;
-  pointer-events: auto;
+  pointer-events: auto; /* Wichtig: damit Klicks auf das Canvas reagieren */
 }
