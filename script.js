@@ -25,7 +25,7 @@ const GAP = 0.02;
 const MARGIN = 0.30;
 const HANDLE_RADIUS = 6;
 
-// --- Bild laden
+// Bild laden
 fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -51,7 +51,6 @@ fileInput.addEventListener("change", (e) => {
   reader.readAsDataURL(file);
 });
 
-// --- Zeichenlogik
 function draw() {
   if (!imageLoaded) return;
 
@@ -86,140 +85,4 @@ function draw() {
     ctx.lineWidth = 2;
     ctx.fillStyle = "rgba(0, 255, 0, 0.15)";
     ctx.beginPath();
-    ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
-    for (let i = 1; i < generatorQuad.length; i++) {
-      ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
-    }
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-
-    // Ziehbare Ecken
-    ctx.fillStyle = "#00ff00";
-    generatorQuad.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
-      ctx.fill();
-    });
-
-    // Modulraster
-    const marginPx = MARGIN * scaleMtoPx;
-    const gapPx = GAP * scaleMtoPx;
-    const moduleW_px = MODULE_W * scaleMtoPx;
-    const moduleH_px = MODULE_H * scaleMtoPx;
-
-    const [tl, tr, br, bl] = generatorQuad;
-
-    const usableWidth = distance(tl, tr) - 2 * marginPx;
-    const usableHeight = distance(tl, bl) - 2 * marginPx;
-
-    const cols = Math.floor((usableWidth + gapPx) / (moduleW_px + gapPx));
-    const rows = Math.floor((usableHeight + gapPx) / (moduleH_px + gapPx));
-
-    const startX = tl.x + marginPx;
-    const startY = tl.y + marginPx;
-
-    ctx.strokeStyle = "white";
-    ctx.lineWidth = 1;
-
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const x = startX + c * (moduleW_px + gapPx);
-        const y = startY + r * (moduleH_px + gapPx);
-        ctx.strokeRect(x, y, moduleW_px, moduleH_px);
-      }
-    }
-  }
-}
-
-// --- Funktionen
-function getTileSize() {
-  switch (tileType.value) {
-    case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.25, ortgang: 0.36 };
-    case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
-    case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.38 };
-    default: return null;
-  }
-}
-
-function computeMeasurements() {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value, 10);
-  const o = parseInt(tilesOrtgangInput.value, 10);
-  if (!tile || !t || !o || !polygonClosed) {
-    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
-    return;
-  }
-
-  const traufe = tile.traufe * t;
-  const ortgang = tile.ortgang * o;
-  const area = traufe * ortgang;
-
-  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
-}
-
-function createGeneratorQuad() {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value, 10);
-  const o = parseInt(tilesOrtgangInput.value, 10);
-  if (!tile || !t || !o || !polygonClosed || polygon.length < 4) {
-    alert("Bitte Dachfläche schließen und Ziegeldaten eingeben.");
-    return;
-  }
-
-  const traufeM = tile.traufe * t;
-  const ortgangM = tile.ortgang * o;
-  const traufePx = distance(polygon[0], polygon[1]);
-  const ortgangPx = distance(polygon[0], polygon[3]);
-  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
-
-  const marginPx = MARGIN * scaleMtoPx;
-
-  const startX = polygon[0].x + marginPx;
-  const startY = polygon[0].y - ortgangPx + marginPx;
-  const width = traufeM * scaleMtoPx;
-  const height = ortgangM * scaleMtoPx;
-
-  generatorQuad = [
-    { x: startX, y: startY },
-    { x: startX + width, y: startY },
-    { x: startX + width, y: startY + height },
-    { x: startX, y: startY + height }
-  ];
-}
-
-// --- Events
-canvas.addEventListener("mousedown", (e) => {
-  const rect = canvas.getBoundingClientRect();
-  const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-
-  if (generatorQuad) {
-    draggingHandle = generatorQuad.findIndex(p => distance(p, pos) < HANDLE_RADIUS + 2);
-    if (draggingHandle >= 0) return;
-  }
-
-  if (!imageLoaded || polygonClosed) return;
-
-  if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
-    polygonClosed = true;
-    computeMeasurements();
-  } else {
-    polygon.push(pos);
-  }
-
-  draw();
-});
-
-canvas.addEventListener("mousemove", (e) => {
-  if (draggingHandle >= 0 && generatorQuad) {
-    const rect = canvas.getBoundingClientRect();
-    const pos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    generatorQuad[draggingHandle] = pos;
-    draw();
-  }
-});
-
-canvas.addEventListener("mouseup", () => {
-  draggingHandle = -1;
-});
+    ctx.moveTo(generatorQuad
