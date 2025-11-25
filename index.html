@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>Minimale Dachflächenmarkierung</title>
+  <title>PV-Dachflächenmarkierung</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
@@ -17,35 +17,30 @@
   </style>
 </head>
 <body>
-  <h1>Dachfläche markieren</h1>
-
-  <div>
-  <label>Ziegeltyp:</label>
-  <select id="tileType">
-    <option value="">Bitte wählen …</option>
-    <option value="einfalz">Einfalzziegel 21 x 33 cm</option>
-    <option value="einfalzJumbo">Einfalz Jumbo 25 x 36 cm</option>
-    <option value="doppelfalz">Doppelfalz 30 x 33 cm</option>
-    <option value="doppelfalzJumbo">Doppelfalz Jumbo 30 x 38 cm</option>
-  </select>
-</div>
-
-<div>
-  <label>Anzahl Ziegel Traufe:</label>
-  <input type="number" id="tilesTraufe" value="30" min="1" />
-</div>
-
-<div>
-  <label>Anzahl Ziegel Ortgang:</label>
-  <input type="number" id="tilesOrtgang" value="15" min="1" />
-</div>
-
-<p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
+  <h3>Dachfläche markieren</h3>
 
   <input type="file" id="fileInput" accept="image/*" />
-  <p>Klicke ins Bild, um Punkte zu setzen. Klicke auf den Startpunkt, um zu schließen.</p>
-  <canvas id="canvas"></canvas>
 
-  <script src="script.js"></script>
-</body>
-</html>
+  <div>
+    <label>Ziegeltyp:</label>
+    <select id="tileType">
+      <option value="">Bitte wählen …</option>
+      <option value="einfalz">Einfalzziegel 21 x 33 cm</option>
+      <option value="einfalzJumbo">Einfalz Jumbo 25 x 36 cm</option>
+      <option value="doppelfalz">Doppelfalz 30 x 33 cm</option>
+      <option value="doppelfalzJumbo">Doppelfalz Jumbo 30 x 38 cm</option>
+    </select>
+  </div>
+
+  <div>
+    <label>Anzahl Ziegel Traufe:</label>
+    <input type="number" id="tilesTraufe" value="30" min="1" />
+  </div>
+
+  <div>
+    <label>Anzahl Ziegel Ortgang:</label>
+    <input type="number" id="tilesOrtgang" value="15" min="1" />
+  </div>
+
+  <p>Klicke ins Bild, um Punkte zu setzen. Klicke auf den Startpunkt, um zu schließen.</p>
+  <p id="info">Traufe: –, Ortgang: –, Fläche: –<
