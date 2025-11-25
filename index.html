@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>PV-Dach-Planer</title>
+  <title>PV-Dach-Planer (Basisversion)</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <h1>PV-Dach-Planer</h1>
+  <h1>PV-Dach-Planer (Basisversion)</h1>
 
   <div class="controls">
     <label>
@@ -32,4 +32,18 @@
 
     <label>
       Ziegel Ortgang (Anzahl):
-      <input type="number" id="tilesOrtgang" value="15" min="1" /
+      <input type="number" id="tilesOrtgang" value="15" min="1" />
+    </label>
+
+    <button id="resetBtn">Fläche zurücksetzen</button>
+    <div id="info">Traufe: –, Ortgang: –, Fläche: –</div>
+  </div>
+
+  <div id="canvasWrapper">
+    <img id="roofImage" alt="Dachfoto" />
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
