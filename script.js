@@ -19,6 +19,7 @@ const moduleInfo = document.getElementById("moduleInfo");
 const pointsInfo = document.getElementById("pointCount");
 
 
+
 // --- Bild --------------------------------------------------------------------
 
 const image = new Image();
