@@ -142,31 +142,49 @@ function polygonArea(pts) {
 }
 
 function drawModules() {
-  const usableT = traufeM - 2 * MARGIN;
-  const usableO = ortgangM - 2 * MARGIN;
-  const cols = Math.floor((usableT + GAP) / (MODULE_W + GAP));
-  const rows = Math.floor((usableO + GAP) / (MODULE_H + GAP));
-  if (cols <= 0 || rows <= 0) return;
+  if (polygon.length < 4) return;
+
+  const tile = getTileSize();
+  const nTraufe = parseInt(tilesTraufeInput.value, 10);
+  const nOrtgang = parseInt(tilesOrtgangInput.value, 10);
+  if (!tile || !nTraufe || !nOrtgang) return;
+
+  const traufeM = tile.traufe * nTraufe;
+  const ortgangM = tile.ortgang * nOrtgang;
 
   const pxTraufe = distance(polygon[0], polygon[1]);
   const pxOrtgang = distance(polygon[0], polygon[polygon.length - 1]);
   const pxPerM = ((traufeM / pxTraufe) + (ortgangM / pxOrtgang)) / 2;
 
-  const modW = MODULE_W * pxPerM;
-  const modH = MODULE_H * pxPerM;
-  const gapPx = GAP * pxPerM;
+  const usableWidthM = traufeM - 2 * MARGIN;
+  const usableHeightM = ortgangM - 2 * MARGIN;
+
+  const modW = MODULE_W + GAP;
+  const modH = MODULE_H + GAP;
+
+  const cols = Math.floor(usableWidthM / modW);
+  const rows = Math.floor(usableHeightM / modH);
+  if (cols <= 0 || rows <= 0) {
+    console.warn("Nicht genug Platz für Module");
+    return;
+  }
+
+  // Start in px
   const marginX = MARGIN * pxPerM;
   const marginY = MARGIN * pxPerM;
+  const modWPx = MODULE_W * pxPerM;
+  const modHPx = MODULE_H * pxPerM;
+  const gapPx = GAP * pxPerM;
 
   const startX = polygon[0].x + marginX;
-  const startY = polygon[polygon.length - 1].y - marginY - rows * (modH + gapPx);
+  const startY = polygon[0].y - (rows * modHPx + (rows - 1) * gapPx) - marginY;
 
   ctx.fillStyle = "rgba(80,80,80,0.6)";
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const x = startX + c * (modW + gapPx);
-      const y = startY + r * (modH + gapPx);
-      ctx.fillRect(x, y, modW, modH);
+      const x = startX + c * (modWPx + gapPx);
+      const y = startY + r * (modHPx + gapPx);
+      ctx.fillRect(x, y, modWPx, modHPx);
     }
   }
 }
