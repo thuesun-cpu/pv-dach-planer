@@ -21,8 +21,14 @@ fileInput.addEventListener("change", (e) => {
   reader.onload = function (event) {
     image.onload = () => {
       imageLoaded = true;
-      canvas.width = image.width;
-      canvas.height = image.height;
+      // Automatisch skalieren
+      const maxWidth = 1000;
+      const scale = Math.min(maxWidth / image.width, 1);
+      canvas.width = image.width * scale;
+      canvas.height = image.height * scale;
+      image.scaledWidth = canvas.width;
+      image.scaledHeight = canvas.height;
+
       polygon = [];
       polygonClosed = false;
       draw();
@@ -43,7 +49,7 @@ canvas.addEventListener("mousedown", (e) => {
 
   if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     polygonClosed = true;
-    computeMeasurements(); // Trigger Berechnung nach Schließen
+    computeMeasurements();
   } else {
     polygon.push(pos);
   }
@@ -55,7 +61,7 @@ function draw() {
   if (!imageLoaded) return;
 
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(image, 0, 0);
+  ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   if (polygon.length === 0) return;
 
