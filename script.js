@@ -1,4 +1,4 @@
-vlet canvas = document.getElementById("canvas");
+let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
 let image = new Image();
 let polygonPoints = [];
