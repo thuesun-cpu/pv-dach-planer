@@ -4,25 +4,7 @@
   <meta charset="UTF-8" />
   <title>PV-Dach-Planer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <style>
-    body {
-      font-family: sans-serif;
-      margin: 20px;
-    }
-    canvas {
-      border: 1px solid #ccc;
-      margin-top: 10px;
-      display: block;
-    }
-    .controls {
-      margin-bottom: 10px;
-    }
-    .controls input,
-    .controls select,
-    .controls button {
-      margin-right: 10px;
-    }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
   <h1>PV-Dach-Planer</h1>
@@ -30,22 +12,21 @@
   <div class="controls">
     <input type="file" id="fileInput" accept="image/*" />
     <select id="tileType">
-      <option value="">Ziegeltyp:</option>
+      <option value="">Ziegeltyp wählen</option>
       <option value="einfalz">Einfalzziegel 21x33 cm</option>
       <option value="einfalz_jumbo">Einfalz Jumbo 25x36 cm</option>
       <option value="doppelfalz">Doppelfalz 30x33 cm</option>
       <option value="doppelfalz_jumbo">Doppelfalz Jumbo 30x38 cm</option>
     </select>
-    Traufe: <input type="number" id="tilesTraufe" value="30" />
-    Ortgang: <input type="number" id="tilesOrtgang" value="15" />
-    <button id="createGen">Generatorfläche anzeigen</button>
-    <button id="clearGen">Generatorfläche löschen</button>
-    Modul-Transparenz:
-    <input type="range" id="opacity" min="0" max="1" step="0.05" value="1" />
+    <input type="number" id="tilesTraufe" placeholder="Traufe (Anzahl)" value="30" />
+    <input type="number" id="tilesOrtgang" placeholder="Ortgang (Anzahl)" value="15" />
+    <button id="resetBtn">Zurücksetzen</button>
+    <button id="drawModulesBtn">Module einzeichnen</button>
+    <input type="range" id="modOpacity" min="0" max="1" step="0.05" value="0.6" />
+    <span id="infoText">Traufe: –, Ortgang: –, Fläche: –</span>
   </div>
 
-  <div id="info"></div>
-  <canvas id="canvas" width="1000" height="700"></canvas>
+  <canvas id="canvas" width="1200" height="700"></canvas>
 
   <script src="script.js"></script>
 </body>
