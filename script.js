@@ -123,6 +123,11 @@ function drawModules() {
   const marginTop = 30;
   const marginLeft = 30;
 
+  const orientation = document.getElementById("moduleOrientation").value;
+  const moduleWidth = orientation === "horizontal" ? 1.765 : 1.134;
+  const moduleHeight = orientation === "horizontal" ? 1.134 : 1.765;
+
+
   const traufZiegel = parseInt(tilesTraufe.value);
   const ortgZiegel = parseInt(tilesOrtgang.value);
   const traufeMeter = (traufZiegel * dims.w) / 100;
