@@ -89,7 +89,12 @@ function draw() {
 
   drawPolygon();
   updateMeasurements();
+
+  if (closed) {
+    drawModules();
+  }
 }
+
 
 function updateMeasurements() {
   if (!closed || polygonPoints.length < 4) {
@@ -107,4 +112,39 @@ function updateMeasurements() {
   const flaeche = (traufZiegel * dims.w * ortgZiegel * dims.h) / 10000;
 
   info.textContent = `Traufe: ${traufZiegel} = ${traufZiegel * dims.w / 100} m, Ortgang: ${ortgZiegel} = ${ortgZiegel * dims.h / 100} m, Fläche: ${flaeche.toFixed(2)} m²`;
+}
+
+function drawModules() {
+  const type = tileType.value;
+  const dims = tileDimensions[type];
+  const moduleWidth = 176.5;
+  const moduleHeight = 113.4;
+  const gap = 2;
+  const marginTop = 30;
+  const marginLeft = 30;
+
+  const traufZiegel = parseInt(tilesTraufe.value);
+  const ortgZiegel = parseInt(tilesOrtgang.value);
+  const traufeMeter = (traufZiegel * dims.w) / 100;
+  const ortgangMeter = (ortgZiegel * dims.h) / 100;
+
+  const modulesPerRow = Math.floor((traufeMeter * 100 - marginLeft) / (moduleWidth + gap));
+  const moduleRows = Math.floor((ortgangMeter * 100 - marginTop) / (moduleHeight + gap));
+
+  const scaleX = (polygonPoints[1][0] - polygonPoints[0][0]) / (traufeMeter * 100);
+  const scaleY = (polygonPoints[3][1] - polygonPoints[0][1]) / (ortgangMeter * 100);
+
+  for (let row = 0; row < moduleRows; row++) {
+    for (let col = 0; col < modulesPerRow; col++) {
+      const x = polygonPoints[0][0] + (marginLeft + col * (moduleWidth + gap)) * scaleX;
+      const y = polygonPoints[0][1] + (marginTop + row * (moduleHeight + gap)) * scaleY;
+      const w = moduleWidth * scaleX;
+      const h = moduleHeight * scaleY;
+
+      ctx.fillStyle = `rgba(0,0,0,${1 - parseFloat(document.getElementById("transparency").value)})`;
+      ctx.fillRect(x, y, w, h);
+      ctx.strokeStyle = "white";
+      ctx.strokeRect(x, y, w, h);
+    }
+  }
 }
