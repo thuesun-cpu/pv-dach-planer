@@ -2,33 +2,76 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <title>PV-Dach-Planer (Lokal)</title>
+  <title>PV-Dach-Planer</title>
   <style>
-    body { font-family: sans-serif; margin: 20px; }
-    canvas { border: 1px solid #aaa; display: block; margin-top: 10px; }
-    label, select, input, button { margin: 5px; }
+    body {
+      font-family: sans-serif;
+      margin: 20px;
+    }
+
+    canvas {
+      border: 1px solid #ccc;
+      display: block;
+      margin-top: 20px;
+    }
+
+    .controls {
+      margin-bottom: 10px;
+    }
+
+    label {
+      margin-right: 10px;
+    }
+
+    input, select {
+      margin-right: 20px;
+    }
+
+    button {
+      margin-right: 10px;
+    }
   </style>
 </head>
 <body>
-  <h2>PV-Dach-Planer (Lokal)</h2>
-  <div>
-    <label>Bild hochladen: <input type="file" id="fileInput" /></label>
+  <h1>PV-Dach-Planer (Lokal)</h1>
+
+  <div class="controls">
+    <label>Bild hochladen:
+      <input type="file" id="fileInput" accept="image/*" />
+    </label>
+
     <label>Ziegeltyp:
       <select id="tileType">
-        <option value="einfalz">Einfalz (21 × 33 cm)</option>
-        <option value="einfalzJumbo" selected>Einfalz Jumbo (24 × 40 cm)</option>
+        <option value="">– Bitte wählen –</option>
+        <option value="einfalz">Einfalzziegel (21 × 33 cm)</option>
+        <option value="einfalzJumbo">Einfalz Jumbo (24 × 40 cm)</option>
         <option value="doppelfalz">Doppelfalz (30 × 33 cm)</option>
         <option value="doppelfalzJumbo">Doppelfalz Jumbo (30 × 40 cm)</option>
       </select>
     </label>
-    <label>Traufe (Ziegel): <input type="number" id="tilesTraufe" value="48" /></label>
-    <label>Ortgang (Ziegel): <input type="number" id="tilesOrtgang" value="15" /></label>
+
+    <label>Traufe (Ziegel):
+      <input type="number" id="tilesTraufe" value="30" min="1" />
+    </label>
+
+    <label>Ortgang (Ziegel):
+      <input type="number" id="tilesOrtgang" value="15" min="1" />
+    </label>
+  </div>
+
+  <div class="controls">
     <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
     <button id="clearGeneratorBtn">Generatorfläche löschen</button>
-    <label>Modultransparenz: <input type="range" id="moduleOpacity" min="0" max="1" step="0.01" value="0.6" /></label>
+
+    <label>Modultransparenz:
+      <input type="range" id="moduleOpacity" min="0" max="1" step="0.05" value="0.6" />
+    </label>
   </div>
-  <div id="info">–</div>
-  <canvas id="canvas"></canvas>
+
+  <div id="info">Traufe: –, Ortgang: –, Fläche: –</div>
+
+  <canvas id="canvas" width="800" height="600"></canvas>
+
   <script src="script.js"></script>
 </body>
 </html>
