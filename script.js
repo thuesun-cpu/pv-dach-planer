@@ -51,6 +51,7 @@ function onMouseDown(e) {
         ) {
             closed = true;
             updateMeasurements();
+            createGeneratorAreaFromPolygon();
             drawCanvas();
             return;
         }
