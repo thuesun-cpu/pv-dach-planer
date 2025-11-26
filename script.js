@@ -1,289 +1,268 @@
+const fileInput = document.getElementById("fileInput");
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
-const fileInput = document.getElementById("fileInput");
-const tileType = document.getElementById("tileType");
-const traufeCount = document.getElementById("traufeCount");
-const ortgangCount = document.getElementById("ortgangCount");
-const showGenBtn = document.getElementById("showGenBtn");
-const clearGenBtn = document.getElementById("clearGenBtn");
-const measurements = document.getElementById("measurements");
-const opacitySlider = document.getElementById("opacitySlider");
-
 let image = new Image();
-let imgLoaded = false;
-
 let polygon = [];
 let polygonClosed = false;
+let generatorQuad = null;
+let draggingPointIndex = null;
+let draggingGenPointIndex = null;
+let modules = [];
 
-let genQuad = null; // Generatorfläche mit 4 Punkten
-let draggingIndex = -1;
+const moduleOpacitySlider = document.getElementById("moduleOpacity");
 
-const HANDLE_SIZE = 8;
+const TILE_TYPES = {
+  "Einfalzziegel 21x33 cm": { width: 0.21, height: 0.33 },
+  "Einfalz Jumbo 25x40 cm": { width: 0.25, height: 0.40 },
+  "Doppelfalz 30x33 cm": { width: 0.30, height: 0.33 },
+  "Doppelfalz Jumbo 30x40 cm": { width: 0.30, height: 0.40 },
+};
 
 const MODULE_WIDTH = 1.134;
 const MODULE_HEIGHT = 1.765;
 const GAP = 0.02;
 const MARGIN = 0.30;
 
-let scale = 1;
-let pxPerM = 1;
-
-let modules = [];
-
-fileInput.addEventListener("change", e => {
+fileInput.addEventListener("change", (e) => {
   const file = e.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = function (ev) {
+  reader.onload = function (event) {
     image.onload = () => {
-      imgLoaded = true;
       canvas.width = image.width;
       canvas.height = image.height;
-      redraw();
+      draw();
     };
-    image.src = ev.target.result;
+    image.src = event.target.result;
   };
   reader.readAsDataURL(file);
 });
 
-canvas.addEventListener("click", e => {
+canvas.addEventListener("click", (e) => {
   const pos = getMousePos(e);
 
-  if (!polygonClosed && imgLoaded) {
-    if (polygon.length >= 3 && isNear(pos, polygon[0])) {
+  // Polygon zeichnen
+  if (!polygonClosed) {
+    if (polygon.length >= 3 && isNear(pos, polygon[0], 10)) {
       polygonClosed = true;
       updateMeasurements();
-      redraw();
-    } else {
-      polygon.push(pos);
-      redraw();
+      draw();
+      return;
     }
+    polygon.push(pos);
+    draw();
     return;
   }
 
-  // Modul aktiv/inaktiv schalten
-  if (polygonClosed && genQuad) {
-    for (let mod of modules) {
-      if (pointInPolygon(pos, mod.corners)) {
-        mod.active = !mod.active;
-        redraw();
-        return;
-      }
+  // Module toggeln
+  for (let i = 0; i < modules.length; i++) {
+    if (pointInPolygon(pos, modules[i])) {
+      modules.splice(i, 1);
+      draw();
+      return;
     }
   }
 });
 
-canvas.addEventListener("mousedown", e => {
-  if (!genQuad) return;
+canvas.addEventListener("mousedown", (e) => {
   const pos = getMousePos(e);
-  draggingIndex = genQuad.findIndex(p => isNear(p, pos));
+  draggingPointIndex = findNearbyPoint(polygon, pos);
+  draggingGenPointIndex = findNearbyPoint(generatorQuad, pos);
 });
 
-canvas.addEventListener("mousemove", e => {
-  if (draggingIndex === -1) return;
+canvas.addEventListener("mousemove", (e) => {
   const pos = getMousePos(e);
-  genQuad[draggingIndex] = pos;
-  redraw();
+  if (draggingPointIndex != null) {
+    polygon[draggingPointIndex] = pos;
+    updateMeasurements();
+    draw();
+  } else if (draggingGenPointIndex != null && generatorQuad) {
+    generatorQuad[draggingGenPointIndex] = pos;
+    updateModules();
+    draw();
+  }
 });
 
 canvas.addEventListener("mouseup", () => {
-  draggingIndex = -1;
+  draggingPointIndex = null;
+  draggingGenPointIndex = null;
 });
 
-function getMousePos(evt) {
+function getMousePos(e) {
   const rect = canvas.getBoundingClientRect();
   return {
-    x: evt.clientX - rect.left,
-    y: evt.clientY - rect.top
+    x: e.clientX - rect.left,
+    y: e.clientY - rect.top,
   };
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (image) ctx.drawImage(image, 0, 0);
+
+  drawPolygon(polygon, "lime");
+  drawPolygon(generatorQuad, "green", true);
+
+  ctx.globalAlpha = parseFloat(moduleOpacitySlider.value);
+
+  modules.forEach((mod) => {
+    drawPolygon(mod, "black", true);
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+
+  ctx.globalAlpha = 1;
+}
+
+function drawPolygon(points, color, fill = false) {
+  if (!points || points.length < 2) return;
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
+  }
+  ctx.closePath();
+
+  if (fill) {
+    ctx.fillStyle = color;
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  points.forEach((p) => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
 }
 
 function isNear(p1, p2, r = 10) {
   return Math.hypot(p1.x - p2.x, p1.y - p2.y) < r;
 }
 
-function updateMeasurements() {
-  const tileSizes = {
-    einfalz: { w: 0.21, h: 0.33 },
-    einfalzjumbo: { w: 0.24, h: 0.40 },
-    doppelfalz: { w: 0.30, h: 0.33 },
-    doppelfalzjumbo: { w: 0.30, h: 0.40 }
-  };
-
-  const type = tileType.value;
-  const tile = tileSizes[type];
-  if (!tile || polygon.length < 2) return;
-
-  const traufe = parseInt(traufeCount.value, 10);
-  const ortgang = parseInt(ortgangCount.value, 10);
-
-  const traufeM = tile.w * traufe;
-  const ortgangM = tile.h * ortgang;
-  pxPerM = distance(polygon[0], polygon[1]) / traufeM;
-
-  const area = traufeM * ortgangM;
-  measurements.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
-}
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-function redraw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (imgLoaded) ctx.drawImage(image, 0, 0);
-
-  if (polygon.length) {
-    ctx.strokeStyle = "green";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(polygon[0].x, polygon[0].y);
-    for (let i = 1; i < polygon.length; i++) {
-      ctx.lineTo(polygon[i].x, polygon[i].y);
-    }
-    if (polygonClosed) ctx.closePath();
-    ctx.stroke();
-
-    ctx.fillStyle = "lime";
-    for (let pt of polygon) {
-      ctx.beginPath();
-      ctx.arc(pt.x, pt.y, HANDLE_SIZE, 0, Math.PI * 2);
-      ctx.fill();
-    }
+function findNearbyPoint(arr, pos, r = 10) {
+  if (!arr) return null;
+  for (let i = 0; i < arr.length; i++) {
+    if (isNear(arr[i], pos, r)) return i;
   }
-
-  if (genQuad) {
-    drawGenerator();
-    drawModules();
-  }
+  return null;
 }
 
-function drawGenerator() {
-  ctx.save();
-  ctx.strokeStyle = "#00ff00";
-  ctx.lineWidth = 2;
-  ctx.fillStyle = "rgba(255,255,255,0.15)";
-  ctx.beginPath();
-  ctx.moveTo(genQuad[0].x, genQuad[0].y);
-  for (let i = 1; i < 4; i++) {
-    ctx.lineTo(genQuad[i].x, genQuad[i].y);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "#00ff00";
-  genQuad.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, HANDLE_SIZE, 0, Math.PI * 2);
-    ctx.fill();
-  });
-
-  ctx.restore();
-}
-
-function lerp(a, b, t) {
-  return {
-    x: a.x + (b.x - a.x) * t,
-    y: a.y + (b.y - a.y) * t
-  };
-}
-
-function drawModules() {
-  const alpha = parseFloat(opacitySlider.value);
-  const modW = MODULE_WIDTH;
-  const modH = MODULE_HEIGHT;
-
-  const traufeM = parseInt(traufeCount.value) * 0.21;
-  const ortgangM = parseInt(ortgangCount.value) * 0.33;
-
-  const topLeft = genQuad[0];
-  const topRight = genQuad[1];
-  const bottomRight = genQuad[2];
-  const bottomLeft = genQuad[3];
-
-  modules = [];
-
-  const numRows = Math.floor((ortgangM - MARGIN + GAP) / (modH + GAP));
-  const numCols = Math.floor((traufeM - MARGIN + GAP) / (modW + GAP));
-
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.strokeStyle = "#ffffff";
-  ctx.fillStyle = "#000000";
-
-  for (let r = 0; r < numRows; r++) {
-    for (let c = 0; c < numCols; c++) {
-      const rowT = (r * (modH + GAP) + MARGIN) / ortgangM;
-      const rowT2 = ((r + 1) * (modH + GAP) + MARGIN) / ortgangM;
-      const colS = (c * (modW + GAP) + MARGIN) / traufeM;
-      const colS2 = ((c + 1) * (modW + GAP) + MARGIN) / traufeM;
-
-      const a = lerp(lerp(topLeft, bottomLeft, rowT), lerp(topRight, bottomRight, rowT), colS);
-      const b = lerp(lerp(topLeft, bottomLeft, rowT), lerp(topRight, bottomRight, rowT), colS2);
-      const c1 = lerp(lerp(topLeft, bottomLeft, rowT2), lerp(topRight, bottomRight, rowT2), colS2);
-      const d = lerp(lerp(topLeft, bottomLeft, rowT2), lerp(topRight, bottomRight, rowT2), colS);
-
-      modules.push({
-        corners: [a, b, c1, d],
-        active: true
-      });
-    }
-  }
-
-  modules.forEach(mod => {
-    if (!mod.active) return;
-    ctx.beginPath();
-    mod.corners.forEach((pt, i) => {
-      if (i === 0) ctx.moveTo(pt.x, pt.y);
-      else ctx.lineTo(pt.x, pt.y);
-    });
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-  });
-
-  ctx.restore();
-}
-
-function pointInPolygon(p, poly) {
+function pointInPolygon(pt, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
-    const xi = poly[i].x, yi = poly[i].y;
-    const xj = poly[j].x, yj = poly[j].y;
-    const intersect = ((yi > p.y) !== (yj > p.y)) &&
-      (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+    const xi = poly[i].x,
+      yi = poly[i].y;
+    const xj = poly[j].x,
+      yj = poly[j].y;
+
+    const intersect =
+      yi > pt.y !== yj > pt.y &&
+      pt.x < ((xj - xi) * (pt.y - yi)) / (yj - yi) + xi;
     if (intersect) inside = !inside;
   }
   return inside;
 }
 
-showGenBtn.addEventListener("click", () => {
-  if (!polygonClosed) return;
-  const bounds = {
-    xMin: Math.min(...polygon.map(p => p.x)),
-    xMax: Math.max(...polygon.map(p => p.x)),
-    yMin: Math.min(...polygon.map(p => p.y)),
-    yMax: Math.max(...polygon.map(p => p.y))
-  };
+function updateMeasurements() {
+  const tileType = document.getElementById("tileType").value;
+  const tilesTraufe = parseInt(document.getElementById("tilesTraufe").value);
+  const tilesOrtgang = parseInt(document.getElementById("tilesOrtgang").value);
 
-  const marginPx = MARGIN * pxPerM;
+  const tile = TILE_TYPES[tileType];
+  if (!polygonClosed || !tile || !tilesTraufe || !tilesOrtgang) return;
 
-  genQuad = [
-    { x: bounds.xMin + marginPx, y: bounds.yMin + marginPx },
-    { x: bounds.xMax - marginPx, y: bounds.yMin + marginPx },
-    { x: bounds.xMax - marginPx, y: bounds.yMax - marginPx },
-    { x: bounds.xMin + marginPx, y: bounds.yMax - marginPx }
+  const traufeM = tilesTraufe * tile.width;
+  const ortgangM = tilesOrtgang * tile.height;
+
+  const pxTraufe = distance(polygon[0], polygon[1]);
+  const pxOrtgang = distance(polygon[0], polygon[3]);
+  const scaleX = traufeM / pxTraufe;
+  const scaleY = ortgangM / pxOrtgang;
+  const mPerPx = (scaleX + scaleY) / 2;
+
+  const areaPx = polygonArea(polygon);
+  const areaM2 = areaPx * mPerPx * mPerPx;
+
+  document.getElementById("measurements").textContent =
+    `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
+
+  // Generatorfläche neu setzen
+  const marginX = MARGIN / scaleX;
+  const marginY = MARGIN / scaleY;
+
+  generatorQuad = [
+    { x: polygon[3].x + marginX, y: polygon[3].y + marginY },
+    { x: polygon[2].x - marginX, y: polygon[2].y + marginY },
+    { x: polygon[1].x - marginX, y: polygon[1].y - marginY },
+    { x: polygon[0].x + marginX, y: polygon[0].y - marginY },
   ];
 
-  redraw();
-});
+  updateModules();
+}
 
-clearGenBtn.addEventListener("click", () => {
-  genQuad = null;
-  redraw();
-});
+function updateModules() {
+  if (!generatorQuad) return;
+
+  modules = [];
+
+  const traufeM = parseFloat(document.getElementById("measurements").textContent.split(" ")[1]);
+  const ortgangM = parseFloat(document.getElementById("measurements").textContent.split(" ")[4]);
+
+  const modW = MODULE_WIDTH;
+  const modH = MODULE_HEIGHT;
+
+  const usableWidth = traufeM - 2 * MARGIN;
+  const usableHeight = ortgangM - MARGIN;
+
+  const numCols = Math.floor((usableWidth + GAP) / (modW + GAP));
+  const numRows = Math.floor((usableHeight) / (modH + GAP)); // ✅ FIXED: GAP not added to usableHeight
+
+  const tl = generatorQuad[0];
+  const tr = generatorQuad[1];
+  const br = generatorQuad[2];
+  const bl = generatorQuad[3];
+
+  for (let row = 0; row < numRows; row++) {
+    const v1 = lerp(tl, bl, row / numRows);
+    const v2 = lerp(tr, br, row / numRows);
+    const v3 = lerp(tl, bl, (row + 1) / numRows);
+    const v4 = lerp(tr, br, (row + 1) / numRows);
+
+    for (let col = 0; col < numCols; col++) {
+      const p1 = lerp(v1, v2, col / numCols);
+      const p2 = lerp(v1, v2, (col + 1) / numCols);
+      const p3 = lerp(v3, v4, (col + 1) / numCols);
+      const p4 = lerp(v3, v4, col / numCols);
+      modules.push([p1, p2, p3, p4]);
+    }
+  }
+  draw();
+}
+
+function distance(p1, p2) {
+  return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+}
+
+function polygonArea(points) {
+  let area = 0;
+  for (let i = 0; i < points.length; i++) {
+    const j = (i + 1) % points.length;
+    area += points[i].x * points[j].y - points[j].x * points[i].y;
+  }
+  return Math.abs(area / 2);
+}
+
+function lerp(p1, p2, t) {
+  return {
+    x: p1.x + (p2.x - p1.x) * t,
+    y: p1.y + (p2.y - p1.y) * t,
+  };
+}
