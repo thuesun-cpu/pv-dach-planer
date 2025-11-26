@@ -7,7 +7,6 @@ const tilesTraufeInput = document.getElementById("tilesTraufe");
 const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
-const moduleOpacityInput = document.getElementById("moduleOpacity");
 const info = document.getElementById("info");
 
 const image = new Image();
@@ -20,10 +19,10 @@ let draggingGeneratorIndex = -1;
 
 let scaleMtoPx = 1;
 
-const MARGIN = 0.30; // 30 cm
+const MARGIN = 0.30; // 30 cm Abstand
 const HANDLE_RADIUS = 6;
 
-// --- Bild laden
+// Datei laden
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -46,7 +45,7 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  // Polygon zeichnen
+  // Dach-Polygon
   if (polygon.length > 0) {
     ctx.lineWidth = 2;
     ctx.strokeStyle = "red";
@@ -70,18 +69,17 @@ function draw() {
     });
   }
 
-  // Generatorfläche
+  // Generator (ziehbar)
   if (generatorQuad) {
+    drawInsetGeneratorArea(); // neue weiße Fläche
     ctx.strokeStyle = "#00ff00";
     ctx.lineWidth = 2;
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
     ctx.beginPath();
     ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
     for (let i = 1; i < 4; i++) {
       ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
     }
     ctx.closePath();
-    ctx.fill();
     ctx.stroke();
 
     ctx.fillStyle = "#ffffff";
@@ -141,8 +139,8 @@ function createGeneratorQuad() {
   const startX = polygon[0].x + marginX;
   const startY = polygon[3].y + marginY;
 
-  const width = traufePx - 2 * marginX;
-  const height = ortgangPx - 2 * marginY;
+  const width = traufeM * scale - 2 * marginX;
+  const height = ortgangM * scale - 2 * marginY;
 
   generatorQuad = [
     { x: startX, y: startY },
@@ -154,12 +152,44 @@ function createGeneratorQuad() {
   draw();
 }
 
+function drawInsetGeneratorArea() {
+  if (!generatorQuad || generatorQuad.length !== 4) return;
+
+  const offset = MARGIN * scaleMtoPx;
+
+  function shrinkLine(p1, p2, d) {
+    const dx = p2.x - p1.x;
+    const dy = p2.y - p1.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const ux = dx / len;
+    const uy = dy / len;
+    return [
+      { x: p1.x + ux * d, y: p1.y + uy * d },
+      { x: p2.x - ux * d, y: p2.y - uy * d }
+    ];
+  }
+
+  const [a, b] = shrinkLine(generatorQuad[0], generatorQuad[1], offset);
+  const [c, d] = shrinkLine(generatorQuad[3], generatorQuad[2], offset);
+  const [p0, p3] = shrinkLine(a, d, offset);
+  const [p1, p2] = shrinkLine(b, c, offset);
+
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.beginPath();
+  ctx.moveTo(p0.x, p0.y);
+  ctx.lineTo(p1.x, p1.y);
+  ctx.lineTo(p2.x, p2.y);
+  ctx.lineTo(p3.x, p3.y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Events
 drawGeneratorBtn.addEventListener("click", createGeneratorQuad);
 clearGeneratorBtn.addEventListener("click", () => { generatorQuad = null; draw(); });
 tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
-moduleOpacityInput.addEventListener("input", draw);
 
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
