@@ -2,8 +2,8 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>PV-Dach-Planer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
     body {
       font-family: sans-serif;
@@ -12,9 +12,13 @@
       border: 1px solid #ccc;
       display: block;
       margin-top: 10px;
+      max-width: 100%;
     }
     #controls {
       margin-bottom: 10px;
+    }
+    label, select, input {
+      margin-right: 10px;
     }
   </style>
 </head>
@@ -22,38 +26,28 @@
   <h1>PV-Dach-Planer</h1>
 
   <div id="controls">
-    <label>Dachbild wählen:
-      <input type="file" id="fileInput" accept="image/*">
-    </label><br>
+    <label>Dachbild wählen: <input type="file" id="fileInput" accept="image/*" /></label>
 
     <label>Ziegeltyp:
       <select id="tileType">
-        <option value="einfalz">Einfalzziegel 21x33 cm</option>
-        <option value="einfalzjumbo">Einfalz Jumbo 24x40 cm</option>
-        <option value="doppelfalz">Doppelfalz 30x33 cm</option>
-        <option value="doppelfalzjumbo">Doppelfalz Jumbo 30x40 cm</option>
+        <option>Einfalzziegel 21x33 cm</option>
+        <option>Einfalz Jumbo 25x40 cm</option>
+        <option>Doppelfalz 30x33 cm</option>
+        <option>Doppelfalz Jumbo 30x40 cm</option>
       </select>
     </label>
 
-    <label>Traufe:
-      <input type="number" id="traufeCount" value="38">
-    </label>
+    <label>Traufe: <input type="number" id="tilesTraufe" value="30" /></label>
+    <label>Ortgang: <input type="number" id="tilesOrtgang" value="15" /></label>
 
-    <label>Ortgang:
-      <input type="number" id="ortgangCount" value="15">
-    </label>
-
-    <button id="showGenBtn">Generatorfläche anzeigen</button>
-    <button id="clearGenBtn">Generatorfläche löschen</button>
+    <span id="measurements"></span><br><br>
 
     <label>Modul-Transparenz:
-      <input type="range" id="opacitySlider" min="0" max="1" step="0.05" value="1">
+      <input type="range" id="moduleOpacity" min="0" max="1" step="0.01" value="1" />
     </label>
-
-    <p id="measurements">Traufe: –, Ortgang: –, Fläche: –</p>
   </div>
 
-  <canvas id="canvas"></canvas>
+  <canvas id="canvas" width="1000" height="600"></canvas>
 
   <script src="script.js"></script>
 </body>
