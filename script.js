@@ -96,7 +96,7 @@ function draw() {
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.25, ortgang: 0.40 };
+    case "einfalzJumbo": return { traufe: 0.24, ortgang: 0.40 };
     case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
     case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.40 };
     default: return null;
