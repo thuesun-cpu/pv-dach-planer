@@ -1,13 +1,12 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="UTF-8">
   <title>PV-Dach-Planer</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
     body {
       font-family: sans-serif;
-      margin: 10px;
     }
     canvas {
       border: 1px solid #ccc;
@@ -15,39 +14,51 @@
       margin-top: 10px;
       cursor: crosshair;
     }
-    .controls {
+    .steuerung {
       margin-bottom: 10px;
     }
     label {
-      margin-right: 5px;
+      margin-right: 10px;
     }
   </style>
 </head>
 <body>
   <h2>PV-Dach-Planer</h2>
 
-  <div class="controls">
-    <label>Bild wählen: <input type="file" id="fileInput" accept="image/*" /></label>
+  <div class="steuerung">
+    <label>Bild wählen:
+      <input type="file" id="fileInput" accept="image/*" />
+    </label>
+
     <label>Ziegeltyp:
       <select id="tileType">
-        <option value="21x33">Einfalzziegel 21x33 cm</option>
-        <option value="24x40">Einfalz Jumbo 24x40 cm</option>
-        <option value="30x33">Doppelfalz 30x33 cm</option>
-        <option value="30x40">Doppelfalz Jumbo 30x40 cm</option>
+        <option value="21x33">Einfalzziegel 21x33 cm</option>
+        <option value="24x40">Einfalz Jumbo 24x40 cm</option>
+        <option value="30x33">Doppelfalz 30x33 cm</option>
+        <option value="30x40">Doppelfalz Jumbo 30x40 cm</option>
       </select>
     </label>
-    <label>Ziegel Traufe: <input type="number" id="tilesTraufe" value="30" /></label>
-    <label>Ziegel Ortgang: <input type="number" id="tilesOrtgang" value="15" /></label>
-    <label>Modultransparenz: <input type="range" id="transparency" min="0" max="1" step="0.01" value="0.85" /></label>
-    <label for="moduleOrientation">Modulausrichtung:</label>
-<select id="moduleOrientation">
-  <option value="horizontal">Horizontal</option>
-  <option value="vertical">Vertikal</option>
-</select>
 
+    <label>Ziegel Traufe:
+      <input type="number" id="tilesTraufe" value="30" />
+    </label>
+
+    <label>Ziegel Ortgang:
+      <input type="number" id="tilesOrtgang" value="15" />
+    </label>
+
+    <label>Modultransparenz:
+      <input type="range" id="transparency" min="0" max="1" step="0.01" value="1" />
+    </label>
+
+    <label for="moduleOrientation">Modulausrichtung:</label>
+    <select id="moduleOrientation">
+      <option value="horizontal">Horizontal</option>
+      <option value="vertical">Vertikal</option>
+    </select>
   </div>
 
-  <div id="info">Traufe: –, Ortgang: –, Fläche: –</div>
+  <p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
   <canvas id="canvas"></canvas>
 
   <script src="script.js"></script>
