@@ -212,7 +212,27 @@ moduleOpacityInput.addEventListener("input", draw);
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
 
-  const [q0, q1, q2, q3] = generatorQuad;
+  const marginPx = MARGIN * scaleMtoPx;
+
+  // Berechne innenliegende Fläche (verkleinertes Viereck)
+  const shrinkEdge = (a, b) => {
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const len = Math.sqrt(dx * dx + dy * dy);
+    const mx = (dx / len) * marginPx;
+    const my = (dy / len) * marginPx;
+    return [
+      { x: a.x + mx, y: a.y + my },
+      { x: b.x - mx, y: b.y - my }
+    ];
+  };
+
+  const [topLeft, topRight] = shrinkEdge(generatorQuad[0], generatorQuad[1]);
+  const [bottomRight, bottomLeft] = shrinkEdge(generatorQuad[2], generatorQuad[3]);
+
+  const innerQuad = [topLeft, topRight, bottomRight, bottomLeft];
+
+  const [q0, q1, q2, q3] = innerQuad;
   const opacity = parseFloat(moduleOpacityInput.value);
   ctx.save();
   ctx.globalAlpha = opacity;
