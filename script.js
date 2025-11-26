@@ -1,60 +1,57 @@
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
-let image = new Image();
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const fileInput = document.getElementById("fileInput");
+const tileType = document.getElementById("tileType");
+const tileTraufe = document.getElementById("tilesTraufe");
+const tileOrtgang = document.getElementById("tilesOrtgang");
+const info = document.getElementById("info");
+const transparencyInput = document.getElementById("moduleTransparency");
+
+let image = null;
 let polygonPoints = [];
+let closed = false;
 let isDragging = false;
 let dragIndex = -1;
-let closed = false;
-let traufeLength = 0;
-let ortgangLength = 0;
-let moduleOpacity = 1;
+let generatorArea = null;
+let moduleTransparency = 0;
 
-let tileWidths = {
-    "21x33": [0.21, 0.33],
-    "24x40": [0.24, 0.40],
-    "30x33": [0.30, 0.33],
-    "30x40": [0.30, 0.40]
-};
-
-let selectedTileSize = tileWidths["21x33"];
-let modules = [];
-
-document.getElementById("fileInput").addEventListener("change", function (e) {
-    const file = e.target.files[0];
-    const reader = new FileReader();
-    reader.onload = function (event) {
-        image.onload = () => {
-            canvas.width = image.width;
-            canvas.height = image.height;
-            drawCanvas();
-        };
-        image.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-});
-
-document.getElementById("tileType").addEventListener("change", function (e) {
-    selectedTileSize = tileWidths[e.target.value];
-    updateMeasurements();
-});
-
-document.getElementById("tileTraufe").addEventListener("input", updateMeasurements);
-document.getElementById("tileOrtgang").addEventListener("input", updateMeasurements);
-
-document.getElementById("moduleOpacity").addEventListener("input", function (e) {
-    moduleOpacity = parseFloat(e.target.value);
+fileInput.addEventListener("change", handleImage);
+canvas.addEventListener("mousedown", onMouseDown);
+canvas.addEventListener("mousemove", onMouseMove);
+canvas.addEventListener("mouseup", () => isDragging = false);
+transparencyInput.addEventListener("input", () => {
+    moduleTransparency = parseFloat(transparencyInput.value);
     drawCanvas();
 });
 
-canvas.addEventListener("mousedown", function (e) {
+function handleImage() {
+    const file = fileInput.files[0];
+    const reader = new FileReader();
+    reader.onload = function (e) {
+        image = new Image();
+        image.onload = () => {
+            canvas.width = image.width;
+            canvas.height = image.height;
+            reset();
+        };
+        image.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+}
+
+function onMouseDown(e) {
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const y = e.clientY - rect.top;
 
     if (!closed) {
-        if (polygonPoints.length > 2 && distance(x, y, polygonPoints[0].x, polygonPoints[0].y) < 10) {
+        if (
+            polygonPoints.length >= 3 &&
+            distance(x, y, polygonPoints[0].x, polygonPoints[0].y) < 10
+        ) {
             closed = true;
             updateMeasurements();
+            drawCanvas();
             return;
         }
         polygonPoints.push({ x, y });
@@ -68,85 +65,169 @@ canvas.addEventListener("mousedown", function (e) {
             }
         }
     }
-});
+}
 
-canvas.addEventListener("mousemove", function (e) {
-    if (isDragging) {
-        const rect = canvas.getBoundingClientRect();
-        polygonPoints[dragIndex].x = e.clientX - rect.left;
-        polygonPoints[dragIndex].y = e.clientY - rect.top;
-        updateMeasurements();
-    }
-});
-
-canvas.addEventListener("mouseup", function () {
-    isDragging = false;
-    dragIndex = -1;
-});
+function onMouseMove(e) {
+    if (!isDragging || dragIndex === -1) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    polygonPoints[dragIndex] = { x, y };
+    drawCanvas();
+    updateMeasurements();
+}
 
 function distance(x1, y1, x2, y2) {
-    return Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2);
+    return Math.hypot(x2 - x1, y2 - y1);
+}
+
+function reset() {
+    polygonPoints = [];
+    closed = false;
+    isDragging = false;
+    dragIndex = -1;
+    generatorArea = null;
+    drawCanvas();
+    updateMeasurements();
 }
 
 function updateMeasurements() {
     if (!closed || polygonPoints.length < 4) {
-        document.getElementById("info").textContent = "Traufe: –, Ortgang: –, Fläche: –";
+        info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
         return;
     }
 
-    const traufeZiegel = parseInt(document.getElementById("tileTraufe").value);
-    const ortgangZiegel = parseInt(document.getElementById("tileOrtgang").value);
+    const traufePx = distance(
+        polygonPoints[0].x, polygonPoints[0].y,
+        polygonPoints[1].x, polygonPoints[1].y
+    );
+    const ortgangPx = distance(
+        polygonPoints[0].x, polygonPoints[0].y,
+        polygonPoints[3].x, polygonPoints[3].y
+    );
 
-    traufeLength = traufeZiegel * selectedTileSize[0];
-    ortgangLength = ortgangZiegel * selectedTileSize[1];
+    const traufeTiles = parseInt(tileTraufe.value);
+    const ortgangTiles = parseInt(tileOrtgang.value);
 
-    const area = traufeLength * ortgangLength;
-    document.getElementById("info").textContent = `Traufe: ${traufeLength.toFixed(2)} m, Ortgang: ${ortgangLength.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
+    const traufeM = getTileWidth(tileType.value) * traufeTiles / 100;
+    const ortgangM = getTileHeight(tileType.value) * ortgangTiles / 100;
+
+    const scaleX = traufeM / traufePx;
+    const scaleY = ortgangM / ortgangPx;
+    const scale = (scaleX + scaleY) / 2;
+
+    const areaPx = Math.abs(
+        polygonPoints[0].x * polygonPoints[1].y +
+        polygonPoints[1].x * polygonPoints[2].y +
+        polygonPoints[2].x * polygonPoints[3].y +
+        polygonPoints[3].x * polygonPoints[0].y -
+        polygonPoints[1].x * polygonPoints[0].y -
+        polygonPoints[2].x * polygonPoints[1].y -
+        polygonPoints[3].x * polygonPoints[2].y -
+        polygonPoints[0].x * polygonPoints[3].y
+    ) / 2;
+
+    const areaM2 = areaPx * scale * scale;
+
+    info.textContent = `Traufe: ${traufeM.toFixed(2)} m, Ortgang: ${ortgangM.toFixed(2)} m, Fläche: ${areaM2.toFixed(2)} m²`;
+
+    // Generatorfläche automatisch setzen nach Schließen
+    generatorArea = {
+        x: polygonPoints[0].x + scale * 0.3,
+        y: polygonPoints[0].y + scale * 0.3,
+        width: traufePx - scale * 0.6,
+        height: ortgangPx - scale * 0.3
+    };
 
     drawCanvas();
 }
 
+function getTileWidth(type) {
+    switch (type) {
+        case "21x33": return 21;
+        case "24x40": return 24;
+        case "30x33": return 30;
+        case "30x40": return 30;
+        default: return 30;
+    }
+}
+
+function getTileHeight(type) {
+    switch (type) {
+        case "21x33": return 33;
+        case "24x40": return 40;
+        case "30x33": return 33;
+        case "30x40": return 40;
+        default: return 40;
+    }
+}
+
 function drawCanvas() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.drawImage(image, 0, 0);
+    if (image) ctx.drawImage(image, 0, 0);
 
     if (polygonPoints.length > 0) {
+        ctx.strokeStyle = "lime";
+        ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(polygonPoints[0].x, polygonPoints[0].y);
         for (let i = 1; i < polygonPoints.length; i++) {
             ctx.lineTo(polygonPoints[i].x, polygonPoints[i].y);
         }
-        if (closed) {
-            ctx.closePath();
-        }
-        ctx.strokeStyle = "green";
-        ctx.lineWidth = 2;
+        if (closed) ctx.lineTo(polygonPoints[0].x, polygonPoints[0].y);
         ctx.stroke();
 
-        polygonPoints.forEach(point => {
+        // Ziehpunkte
+        ctx.fillStyle = "cyan";
+        polygonPoints.forEach(p => {
             ctx.beginPath();
-            ctx.arc(point.x, point.y, 5, 0, Math.PI * 2);
-            ctx.fillStyle = "cyan";
+            ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
             ctx.fill();
         });
     }
 
-    if (closed) {
+    if (closed && generatorArea) {
         drawModules();
     }
 }
 
 function drawModules() {
-    const cols = Math.floor(traufeLength / 1.2);
-    const rows = Math.floor(ortgangLength / 1.8);
-    const startX = polygonPoints[0].x;
-    const startY = polygonPoints[0].y + 30;
+    if (!generatorArea) return;
 
-    ctx.fillStyle = `rgba(0, 0, 0, ${moduleOpacity})`;
+    const moduleWidth = 113.4;
+    const moduleHeight = 176.5;
+    const moduleGap = 2;
 
-    for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-            ctx.fillRect(startX + c * 122, startY + r * 182, 120, 180);
+    const traufePx = distance(polygonPoints[0].x, polygonPoints[0].y, polygonPoints[1].x, polygonPoints[1].y);
+    const ortgangPx = distance(polygonPoints[0].x, polygonPoints[0].y, polygonPoints[3].x, polygonPoints[3].y);
+    const traufeM = getTileWidth(tileType.value) * parseInt(tileTraufe.value) / 100;
+    const ortgangM = getTileHeight(tileType.value) * parseInt(tileOrtgang.value) / 100;
+    const scaleX = traufeM / traufePx;
+    const scaleY = ortgangM / ortgangPx;
+    const scale = (scaleX + scaleY) / 2;
+
+    const moduleTotalW = moduleWidth + moduleGap;
+    const moduleTotalH = moduleHeight + moduleGap;
+
+    const cols = Math.floor((traufeM - 0.3) / (moduleTotalW / 100));
+    const rows = Math.floor((ortgangM - 0.3) / (moduleTotalH / 100));
+
+    const startX = polygonPoints[0].x + scale * 30; // 30 cm
+    const startY = polygonPoints[0].y + scale * 30;
+
+    ctx.globalAlpha = 1 - moduleTransparency;
+    for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+            const x = startX + col * (scale * moduleTotalW / 100);
+            const y = startY + row * (scale * moduleTotalH / 100);
+            const w = scale * moduleWidth / 100;
+            const h = scale * moduleHeight / 100;
+
+            ctx.fillStyle = "black";
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = "white";
+            ctx.strokeRect(x, y, w, h);
         }
     }
+    ctx.globalAlpha = 1;
 }
