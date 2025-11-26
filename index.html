@@ -8,33 +8,32 @@
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
-      background: #f9f9f9;
+      background: #f4f4f4;
     }
 
     h1 {
-      margin-bottom: 10px;
       color: #333;
     }
 
     .controls {
-      margin-bottom: 15px;
+      margin-bottom: 10px;
     }
 
     .controls label {
-      margin-right: 15px;
+      display: inline-block;
+      margin-right: 10px;
     }
 
     canvas {
-      border: 1px solid #999;
+      border: 1px solid #aaa;
       max-width: 100%;
       display: block;
-      margin-top: 15px;
+      margin-top: 10px;
     }
 
     #info {
-      margin-top: 12px;
+      margin-top: 10px;
       font-weight: bold;
-      color: #333;
     }
   </style>
 </head>
@@ -50,7 +49,7 @@
     <label>Ziegeltyp:
       <select id="tileSelect">
         <option value="einfalz">Einfalzziegel 21×33 cm</option>
-        <option value="einfalzJumbo">Einfalz Jumbo 24×40 cm</option> <!-- ✅ Korrektur -->
+        <option value="einfalzJumbo">Einfalz Jumbo 24×40 cm</option>
         <option value="doppelfalz">Doppelfalz 30×33 cm</option>
         <option value="doppelfalzJumbo">Doppelfalz Jumbo 30×40 cm</option>
       </select>
