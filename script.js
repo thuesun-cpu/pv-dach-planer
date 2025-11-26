@@ -237,7 +237,7 @@ function updateMeasurements() {
       tileH = 0.33;
       break;
     case "einfalzJumbo":
-      tileW = 0.25;
+      tileW = 0.24;
       tileH = 0.40;
       break;
     case "doppelfalz":
