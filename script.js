@@ -1,5 +1,6 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+
 const fileInput = document.getElementById("fileInput");
 const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
@@ -175,7 +176,6 @@ drawGeneratorBtn.addEventListener("click", () => {
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
-
   const traufePx = distance(polygon[0], polygon[1]);
   const ortgangPx = distance(polygon[0], polygon[3]);
   scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
@@ -209,12 +209,12 @@ tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
 
+// FINAL: MODULE DARSTELLUNG MIT KORREKTEM RAND
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
 
   const marginPx = MARGIN * scaleMtoPx;
 
-  // Berechne innenliegende Fläche (verkleinertes Viereck)
   const shrinkEdge = (a, b) => {
     const dx = b.x - a.x;
     const dy = b.y - a.y;
@@ -227,36 +227,29 @@ function drawModules() {
     ];
   };
 
-  const [topLeft, topRight] = shrinkEdge(generatorQuad[0], generatorQuad[1]);
-  const [bottomRight, bottomLeft] = shrinkEdge(generatorQuad[2], generatorQuad[3]);
+  const [q0, q1] = shrinkEdge(generatorQuad[0], generatorQuad[1]);
+  const [q2, q3] = shrinkEdge(generatorQuad[2], generatorQuad[3]);
 
-  const innerQuad = [topLeft, topRight, bottomRight, bottomLeft];
+  const quad = [q0, q1, q2, q3];
 
-  const [q0, q1, q2, q3] = innerQuad;
   const opacity = parseFloat(moduleOpacityInput.value);
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = "white";
   ctx.fillStyle = "black";
 
-  const cols = fixedModuleCols;
-  const rows = fixedModuleRows;
+  for (let r = 0; r < fixedModuleRows; r++) {
+    const t0 = r / fixedModuleRows;
+    const t1 = (r + 1) / fixedModuleRows;
 
-  const sStep = 1 / cols;
-  const tStep = 1 / rows;
+    const left0 = lerp(quad[0], quad[3], t0);
+    const right0 = lerp(quad[1], quad[2], t0);
+    const left1 = lerp(quad[0], quad[3], t1);
+    const right1 = lerp(quad[1], quad[2], t1);
 
-  for (let r = 0; r < rows; r++) {
-    const t0 = r * tStep;
-    const t1 = (r + 1) * tStep;
-
-    const left0 = lerp(q0, q3, t0);
-    const right0 = lerp(q1, q2, t0);
-    const left1 = lerp(q0, q3, t1);
-    const right1 = lerp(q1, q2, t1);
-
-    for (let c = 0; c < cols; c++) {
-      const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
+    for (let c = 0; c < fixedModuleCols; c++) {
+      const s0 = c / fixedModuleCols;
+      const s1 = (c + 1) / fixedModuleCols;
 
       const a = lerp(left0, right0, s0);
       const b = lerp(left0, right0, s1);
