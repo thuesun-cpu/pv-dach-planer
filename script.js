@@ -77,6 +77,34 @@ function onMouseMove(e) {
     updateMeasurements();
 }
 
+function createGeneratorAreaFromPolygon() {
+    const traufePx = distance(polygonPoints[0].x, polygonPoints[0].y, polygonPoints[1].x, polygonPoints[1].y);
+    const ortgangPx = distance(polygonPoints[0].x, polygonPoints[0].y, polygonPoints[3].x, polygonPoints[3].y);
+
+    const traufeM = getTileWidth(tileType.value) * parseInt(tileTraufe.value) / 100;
+    const ortgangM = getTileHeight(tileType.value) * parseInt(tileOrtgang.value) / 100;
+
+    const scaleX = traufeM / traufePx;
+    const scaleY = ortgangM / ortgangPx;
+
+    const scale = (scaleX + scaleY) / 2;
+
+    const marginPxX = scale * 30;
+    const marginPxY = scale * 30;
+
+    const x = polygonPoints[0].x + marginPxX;
+    const y = polygonPoints[0].y + marginPxY;
+    const width = traufePx - marginPxX - scale * 30;
+    const height = ortgangPx - marginPxY;
+
+    generatorArea = {
+        x,
+        y,
+        width,
+        height
+    };
+}
+
 function distance(x1, y1, x2, y2) {
     return Math.hypot(x2 - x1, y2 - y1);
 }
