@@ -107,7 +107,7 @@ function isNear(p1, p2, r = 10) {
 function updateMeasurements() {
   const tileSizes = {
     einfalz: { w: 0.21, h: 0.33 },
-    einfalzjumbo: { w: 0.25, h: 0.40 },
+    einfalzjumbo: { w: 0.24, h: 0.40 },
     doppelfalz: { w: 0.30, h: 0.33 },
     doppelfalzjumbo: { w: 0.30, h: 0.40 }
   };
