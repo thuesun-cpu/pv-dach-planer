@@ -18,8 +18,6 @@ let polygonClosed = false;
 let generatorQuad = null;
 let draggingGeneratorIndex = -1;
 
-let moduleStates = []; // true = sichtbar, false = deaktiviert
-
 let scaleMtoPx = 1;
 
 const MODULE_W = 1.134;
@@ -51,57 +49,51 @@ function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
-  drawPolygon();
-  drawGenerator();
-  drawModules();
-}
+  if (polygon.length > 0) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "red";
+    ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
+    ctx.beginPath();
+    ctx.moveTo(polygon[0].x, polygon[0].y);
+    for (let i = 1; i < polygon.length; i++) {
+      ctx.lineTo(polygon[i].x, polygon[i].y);
+    }
+    if (polygonClosed) {
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.stroke();
 
-function drawPolygon() {
-  if (polygon.length === 0) return;
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = "red";
-  ctx.fillStyle = "rgba(255, 0, 0, 0.2)";
-  ctx.beginPath();
-  ctx.moveTo(polygon[0].x, polygon[0].y);
-  for (let i = 1; i < polygon.length; i++) {
-    ctx.lineTo(polygon[i].x, polygon[i].y);
+    ctx.fillStyle = "#00bcd4";
+    polygon.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
-  if (polygonClosed) {
+
+  if (generatorQuad) {
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = 2;
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath();
+    ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
+    for (let i = 1; i < 4; i++) {
+      ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
+    }
     ctx.closePath();
     ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = "#ffffff";
+    generatorQuad.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
-  ctx.stroke();
 
-  ctx.fillStyle = "#00bcd4";
-  polygon.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, 5, 0, Math.PI * 2);
-    ctx.fill();
-  });
-}
-
-function drawGenerator() {
-  if (!generatorQuad) return;
-
-  ctx.strokeStyle = "#00ff00";
-  ctx.lineWidth = 2;
-  ctx.fillStyle = "rgba(255,255,255,0.4)";
-  ctx.beginPath();
-  ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
-  for (let i = 1; i < 4; i++) {
-    ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
-  }
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  ctx.fillStyle = "#ffffff";
-  generatorQuad.forEach(p => {
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, Math.PI * 2);
-    ctx.fill();
-  });
+  drawModulesInGenerator();
 }
 
 function getTileSize() {
@@ -143,44 +135,29 @@ function createGeneratorQuad() {
 
   const traufePx = distance(polygon[0], polygon[1]);
   const ortgangPx = distance(polygon[0], polygon[3]);
-  const scale = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
-  scaleMtoPx = scale;
+  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
-  const marginX = MARGIN * scale;
-  const marginY = MARGIN * scale;
+  const marginX = MARGIN * scaleMtoPx;
+  const marginY = MARGIN * scaleMtoPx;
 
-  const startX = polygon[0].x + marginX;
-  const startY = polygon[3].y + marginY;
+  const tl = { x: polygon[3].x + marginX, y: polygon[3].y + marginY };
+  const tr = { x: polygon[2].x - marginX, y: polygon[2].y + marginY };
+  const br = { x: polygon[1].x - marginX, y: polygon[1].y - marginY };
+  const bl = { x: polygon[0].x + marginX, y: polygon[0].y - marginY };
 
-  const width = traufeM * scale - 2 * marginX;
-  const height = ortgangM * scale - 2 * marginY;
-
-  generatorQuad = [
-    { x: startX, y: startY },
-    { x: startX + width, y: startY },
-    { x: startX + width, y: startY + height },
-    { x: startX, y: startY + height }
-  ];
-
+  generatorQuad = [tl, tr, br, bl];
   draw();
 }
 
 drawGeneratorBtn.addEventListener("click", createGeneratorQuad);
-clearGeneratorBtn.addEventListener("click", () => {
-  generatorQuad = null;
-  moduleStates = [];
-  draw();
-});
+clearGeneratorBtn.addEventListener("click", () => { generatorQuad = null; draw(); });
 tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
 
-// ➤ Punkte setzen für Polygon
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
-
-  // Generatorfläche ziehen
   if (generatorQuad) {
     const idx = findHandleIndex(generatorQuad, pos, HANDLE_RADIUS + 4);
     if (idx >= 0) {
@@ -194,11 +171,9 @@ canvas.addEventListener("mousedown", e => {
   if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     polygonClosed = true;
     computeMeasurements();
-    draw();
-    return;
+  } else {
+    polygon.push(pos);
   }
-
-  polygon.push(pos);
   draw();
 });
 
@@ -211,25 +186,6 @@ canvas.addEventListener("mousemove", e => {
   }
 });
 canvas.addEventListener("mouseup", () => draggingGeneratorIndex = -1);
-
-// Modul-Klick (ein-/ausblenden)
-canvas.addEventListener("click", e => {
-  const pos = getMousePos(e);
-  const clicked = getClickedModule(pos);
-  if (clicked !== null) {
-    moduleStates[clicked] = !moduleStates[clicked];
-    draw();
-  }
-});
-
-function getClickedModule(pos) {
-  if (!generatorQuad || modulePositions.length === 0) return null;
-  for (let i = 0; i < modulePositions.length; i++) {
-    const m = modulePositions[i];
-    if (pointInQuad(pos, m)) return i;
-  }
-  return null;
-}
 
 function getMousePos(evt) {
   const rect = canvas.getBoundingClientRect();
@@ -261,73 +217,45 @@ function lerp(p1, p2, t) {
   };
 }
 
-function pointInQuad(p, quad) {
-  const [a, b, c, d] = quad;
-  const area = triArea(a, b, p) + triArea(b, c, p) + triArea(c, d, p) + triArea(d, a, p);
-  const quadArea = triArea(a, b, c) + triArea(c, d, a);
-  return Math.abs(area - quadArea) < 1;
-}
-
-function triArea(p1, p2, p3) {
-  return Math.abs(
-    (p1.x * (p2.y - p3.y) +
-     p2.x * (p3.y - p1.y) +
-     p3.x * (p1.y - p2.y)) / 2
-  );
-}
-
-// Module zeichnen
-let modulePositions = [];
-
-function drawModules() {
-  if (!generatorQuad || scaleMtoPx === 0) return;
+function drawModulesInGenerator() {
+  if (!generatorQuad || generatorQuad.length < 4 || scaleMtoPx === 0) return;
 
   const q0 = generatorQuad[0];
   const q1 = generatorQuad[1];
   const q2 = generatorQuad[2];
   const q3 = generatorQuad[3];
 
-  const usableTraufe = distance(q0, q1) / scaleMtoPx - 2 * MARGIN;
-  const usableOrtgang = distance(q0, q3) / scaleMtoPx - 2 * MARGIN;
+  const traufeM = distance(q0, q1) / scaleMtoPx;
+  const ortgangM = distance(q0, q3) / scaleMtoPx;
 
-  const cols = Math.floor((usableTraufe + GAP) / (MODULE_W + GAP));
-  const rows = Math.floor((usableOrtgang + GAP) / (MODULE_H + GAP));
+  const cols = Math.floor((traufeM + GAP) / (MODULE_W + GAP));
+  const rows = Math.floor((ortgangM + GAP) / (MODULE_H + GAP));
 
-  const s0 = MARGIN / (usableTraufe + 2 * MARGIN);
-  const t0 = MARGIN / (usableOrtgang + 2 * MARGIN);
-
-  const sStep = (MODULE_W + GAP) / (usableTraufe + 2 * MARGIN);
-  const tStep = (MODULE_H + GAP) / (usableOrtgang + 2 * MARGIN);
+  const tStep = 1 / rows;
+  const sStep = 1 / cols;
 
   const opacity = parseFloat(moduleOpacityInput.value);
 
   ctx.save();
   ctx.lineWidth = 1;
-  modulePositions = [];
 
   for (let r = 0; r < rows; r++) {
-    const tStart = t0 + r * tStep;
-    const tEnd = t0 + (r + 1) * tStep;
+    const t0 = r * tStep;
+    const t1 = (r + 1) * tStep;
 
-    const leftStart = lerp(q0, q3, tStart);
-    const rightStart = lerp(q1, q2, tStart);
-    const leftEnd = lerp(q0, q3, tEnd);
-    const rightEnd = lerp(q1, q2, tEnd);
+    const left0 = lerp(q0, q3, t0);
+    const right0 = lerp(q1, q2, t0);
+    const left1 = lerp(q0, q3, t1);
+    const right1 = lerp(q1, q2, t1);
 
     for (let c = 0; c < cols; c++) {
-      const sStart = s0 + c * sStep;
-      const sEnd = s0 + (c + 1) * sStep;
+      const s0 = c * sStep;
+      const s1 = (c + 1) * sStep;
 
-      const a = lerp(leftStart, rightStart, sStart);
-      const b = lerp(leftStart, rightStart, sEnd);
-      const c1 = lerp(leftEnd, rightEnd, sEnd);
-      const d = lerp(leftEnd, rightEnd, sStart);
-
-      const modIdx = r * cols + c;
-      if (moduleStates[modIdx] === false) continue;
-      moduleStates[modIdx] = true;
-
-      modulePositions.push([a, b, c1, d]);
+      const a = lerp(left0, right0, s0);
+      const b = lerp(left0, right0, s1);
+      const c1 = lerp(left1, right1, s1);
+      const d = lerp(left1, right1, s0);
 
       ctx.globalAlpha = opacity;
       ctx.fillStyle = "black";
@@ -347,3 +275,4 @@ function drawModules() {
 
   ctx.restore();
 }
+
