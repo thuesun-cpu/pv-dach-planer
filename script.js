@@ -40,6 +40,9 @@ fileInput.addEventListener("change", function (e) {
       imageLoaded = true;
       canvas.width = image.width;
       canvas.height = image.height;
+      polygon = [];
+      polygonClosed = false;
+      generatorQuad = null;
       redraw();
     };
     image.src = event.target.result;
@@ -213,95 +216,18 @@ function lerp(a, b, t) {
 }
 
 function drawModules() {
-  if (!generatorQuad) return;
-
-  const q0 = generatorQuad[0];
-  const q1 = generatorQuad[1];
-  const q2 = generatorQuad[2];
-  const q3 = generatorQuad[3];
-
-  const pxPerM_ortgang = distance(q0, q3) / ortgangM;
-  const pxPerM_traufe = distance(q0, q1) / traufeM;
-
-  const usableW = traufeM - MARGIN * 2;
-  const usableH = ortgangM - MARGIN;
-
-  const moduleW = MODULE_W;
-  const moduleH = MODULE_H;
-
-  moduleCols = Math.floor((usableW + MODULE_GAP) / (moduleW + MODULE_GAP));
-  moduleRows = Math.floor((usableH + MODULE_GAP) / (moduleH + MODULE_GAP));
-
-  ctx.globalAlpha = moduleOpacity;
-  ctx.strokeStyle = "white";
-  ctx.fillStyle = "black";
-  ctx.lineWidth = 1;
-
-  for (let r = 0; r < moduleRows; r++) {
-    for (let c = 0; c < moduleCols; c++) {
-      const xOffsetM = MARGIN + c * (moduleW + MODULE_GAP);
-      const yOffsetM = MARGIN + r * (moduleH + MODULE_GAP);
-
-      const xOffset = xOffsetM * pxPerM_traufe;
-      const yOffset = yOffsetM * pxPerM_ortgang;
-
-      const topLeft = lerp(q0, q1, xOffset / distance(q0, q1));
-      const bottomLeft = lerp(q3, q2, xOffset / distance(q3, q2));
-      const left = lerp(topLeft, bottomLeft, yOffset / distance(topLeft, bottomLeft));
-
-      const rightXOffset = (xOffsetM + moduleW) * pxPerM_traufe;
-      const topRight = lerp(q0, q1, rightXOffset / distance(q0, q1));
-      const bottomRight = lerp(q3, q2, rightXOffset / distance(q3, q2));
-      const right = lerp(topRight, bottomRight, yOffset / distance(topRight, bottomRight));
-
-      const nextY = (yOffsetM + moduleH) * pxPerM_ortgang;
-      const leftBottom = lerp(topLeft, bottomLeft, nextY / distance(topLeft, bottomLeft));
-      const rightBottom = lerp(topRight, bottomRight, nextY / distance(topRight, bottomRight));
-
-      ctx.beginPath();
-      ctx.moveTo(left.x, left.y);
-      ctx.lineTo(right.x, right.y);
-      ctx.lineTo(rightBottom.x, rightBottom.y);
-      ctx.lineTo(leftBottom.x, leftBottom.y);
-      ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
-    }
-  }
-
-  ctx.globalAlpha = 1;
+  // später ggf. rein – aktuell irrelevant für Zeichnung
 }
 
-// ---------- Generatorfläche ----------
-
-document.getElementById("showGenBtn").addEventListener("click", function () {
-  if (!polygonClosed) return;
-
-  generatorQuad = [
-    polygon[0],
-    polygon[1],
-    polygon[2],
-    polygon[3],
-  ];
-  redraw();
-});
-
-document.getElementById("clearGenBtn").addEventListener("click", function () {
-  generatorQuad = null;
-  redraw();
-});
-
-document.getElementById("opacity").addEventListener("input", function (e) {
+document.getElementById("opacity")?.addEventListener("input", function (e) {
   moduleOpacity = parseFloat(e.target.value);
   redraw();
 });
 
-// ---------- Berechnungen ----------
-
 function updateMeasurements() {
-  const traufeCount = parseInt(document.getElementById("traufe").value);
-  const ortgangCount = parseInt(document.getElementById("ortgang").value);
-  const tileType = document.getElementById("tileSelect").value;
+  const traufeCount = parseInt(document.getElementById("traufe")?.value);
+  const ortgangCount = parseInt(document.getElementById("ortgang")?.value);
+  const tileType = document.getElementById("tileSelect")?.value;
 
   let tileW = 0;
   let tileH = 0;
