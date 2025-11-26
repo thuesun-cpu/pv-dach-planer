@@ -8,32 +8,33 @@
     body {
       font-family: Arial, sans-serif;
       margin: 20px;
-      background: #f4f4f4;
+      background: #f9f9f9;
     }
 
     h1 {
+      margin-bottom: 10px;
       color: #333;
     }
 
     .controls {
-      margin-bottom: 10px;
+      margin-bottom: 15px;
     }
 
     .controls label {
-      display: inline-block;
-      margin-right: 10px;
+      margin-right: 15px;
     }
 
     canvas {
-      border: 1px solid #aaa;
+      border: 1px solid #999;
       max-width: 100%;
       display: block;
-      margin-top: 10px;
+      margin-top: 15px;
     }
 
     #info {
-      margin-top: 10px;
+      margin-top: 12px;
       font-weight: bold;
+      color: #333;
     }
   </style>
 </head>
@@ -48,19 +49,19 @@
 
     <label>Ziegeltyp:
       <select id="tileSelect">
-        <option value="einfalz">Einfalzziegel 21 × 33 cm</option>
-        <option value="einfalzJumbo">Einfalz Jumbo 24 × 40 cm</option>
-        <option value="doppelfalz">Doppelfalz 30 × 33 cm</option>
-        <option value="doppelfalzJumbo">Doppelfalz Jumbo 30 × 40 cm</option>
+        <option value="einfalz">Einfalzziegel 21×33 cm</option>
+        <option value="einfalzJumbo">Einfalz Jumbo 24×40 cm</option> <!-- ✅ Korrektur -->
+        <option value="doppelfalz">Doppelfalz 30×33 cm</option>
+        <option value="doppelfalzJumbo">Doppelfalz Jumbo 30×40 cm</option>
       </select>
     </label>
 
-    <label>Anzahl Ziegel Traufe:
-      <input type="number" id="traufe" min="1" value="30">
+    <label>Ziegel Traufe:
+      <input type="number" id="traufe" value="30" min="1">
     </label>
 
-    <label>Anzahl Ziegel Ortgang:
-      <input type="number" id="ortgang" min="1" value="15">
+    <label>Ziegel Ortgang:
+      <input type="number" id="ortgang" value="15" min="1">
     </label>
 
     <label>Modultransparenz:
@@ -70,7 +71,7 @@
 
   <div id="info">Traufe: – m, Ortgang: – m, Fläche: – m²</div>
 
-  <canvas id="canvas" width="1000" height="700"></canvas>
+  <canvas id="canvas" width="1200" height="800"></canvas>
 
   <script src="script.js"></script>
 </body>
