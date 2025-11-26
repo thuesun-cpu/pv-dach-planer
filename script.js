@@ -123,15 +123,14 @@ canvas.addEventListener("mouseup", function () {
   draggingGeneratorIndex = -1;
 });
 
-// ---------- Klick zum Polygon erstellen ----------
+// ---------- Polygon zeichnen per Klick ----------
 
 canvas.addEventListener("click", function (evt) {
-  if (!imageLoaded) return;
+  if (!imageLoaded || polygonClosed) return;
   const pos = getMousePos(evt);
 
-  if (polygonClosed) return;
-
-  if (polygon.length >= 3 && distance(polygon[0], pos) < 10) {
+  // Schließe Polygon nur, wenn Klick auf Startpunkt
+  if (polygon.length >= 3 && distance(pos, polygon[0]) < 10) {
     polygonClosed = true;
     updateMeasurements();
     redraw();
@@ -216,7 +215,7 @@ function lerp(a, b, t) {
 }
 
 function drawModules() {
-  // später ggf. rein – aktuell irrelevant für Zeichnung
+  // Module werden später gezeichnet
 }
 
 document.getElementById("opacity")?.addEventListener("input", function (e) {
