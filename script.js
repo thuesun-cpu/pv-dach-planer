@@ -126,11 +126,9 @@ function createGeneratorQuad() {
 
   generatorQuad = [tl, tr, br, bl];
 
-  const usableHeight = ortgangM - MARGIN;
-  const usableWidth = traufeM - MARGIN;
-
-  moduleCols = Math.floor((usableWidth + GAP) / (MODULE_W + GAP));
-  moduleRows = Math.floor((usableHeight + GAP) / (MODULE_H + GAP));
+  // KORREKTE Modulanzahl berechnen
+  moduleCols = Math.floor((traufeM - 2 * MARGIN + GAP) / (MODULE_W + GAP));
+  moduleRows = Math.floor((ortgangM - MARGIN + GAP) / (MODULE_H + GAP));
 }
 
 function move(p1, p2, dist) {
