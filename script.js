@@ -26,7 +26,6 @@ const GAP = 0.02;
 const MARGIN = 0.3;
 const HANDLE_RADIUS = 6;
 
-// ⬇ Bild laden
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -46,7 +45,6 @@ fileInput.addEventListener("change", e => {
   reader.readAsDataURL(file);
 });
 
-// ⬇ Mouse Events
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
   if (generatorQuad) {
@@ -85,10 +83,7 @@ function getMousePos(evt) {
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-  if (imageLoaded) {
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-  }
+  if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
 
   if (polygon.length) {
     ctx.beginPath();
@@ -134,7 +129,7 @@ function draw() {
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
+    case "einfalzJumbo": return { traufe: 0.24, ortgang: 0.40 };
     case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
     case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.40 };
     default: return null;
@@ -168,7 +163,6 @@ function distance(a, b) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Generatorfläche erstellen
 drawGeneratorBtn.addEventListener("click", () => {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
@@ -187,16 +181,24 @@ drawGeneratorBtn.addEventListener("click", () => {
 
   const marginPx = MARGIN * scaleMtoPx;
 
-  const q0 = { x: polygon[0].x + marginPx, y: polygon[0].y + marginPx };
-  const q1 = { x: polygon[1].x - marginPx, y: polygon[1].y + marginPx };
-  const q2 = { x: polygon[2].x - marginPx, y: polygon[2].y - marginPx };
-  const q3 = { x: polygon[3].x + marginPx, y: polygon[3].y - marginPx };
-  generatorQuad = [q0, q1, q2, q3];
+  // Berechne verfügbare Fläche (rechte Seite + unten)
+  const usableW = traufeM - MARGIN;
+  const usableH = ortgangM - MARGIN;
 
-  const usableW = traufeM - 2 * MARGIN;
-  const usableH = ortgangM - 2 * MARGIN;
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
+
+  const totalW = fixedModuleCols * (MODULE_W + GAP) - GAP;
+  const totalH = fixedModuleRows * (MODULE_H + GAP) - GAP;
+
+  const totalWPx = totalW * scaleMtoPx;
+  const totalHPx = totalH * scaleMtoPx;
+
+  const q0 = { x: polygon[0].x + marginPx, y: polygon[0].y + marginPx };
+  const q1 = { x: q0.x + totalWPx, y: q0.y };
+  const q2 = { x: q0.x + totalWPx, y: q0.y + totalHPx };
+  const q3 = { x: q0.x, y: q0.y + totalHPx };
+  generatorQuad = [q0, q1, q2, q3];
 
   computeMeasurements();
   draw();
