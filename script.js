@@ -13,24 +13,21 @@ const info = document.getElementById("info");
 
 const image = new Image();
 let imageLoaded = false;
-
 let polygon = [];
 let polygonClosed = false;
 let generatorQuad = null;
 let draggingIndex = -1;
-let draggingGenerator = false;
+let scaleMtoPx = 1;
 
 let fixedModuleCols = 0;
 let fixedModuleRows = 0;
-let scaleMtoPx = 1;
+const disabledModules = new Set();
 
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
 const MARGIN = 0.3;
 const HANDLE_RADIUS = 6;
-
-let moduleStates = [];
 
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
@@ -45,6 +42,7 @@ fileInput.addEventListener("change", e => {
       polygon = [];
       polygonClosed = false;
       generatorQuad = null;
+      disabledModules.clear();
       draw();
     };
     image.src = ev.target.result;
@@ -54,12 +52,6 @@ fileInput.addEventListener("change", e => {
 
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
-  if (e.button === 2 && generatorQuad) {
-    draggingGenerator = true;
-    canvas.style.cursor = "move";
-    return;
-  }
-
   if (generatorQuad) {
     const idx = generatorQuad.findIndex(p =>
       Math.hypot(p.x - pos.x, p.y - pos.y) < HANDLE_RADIUS + 3
@@ -69,7 +61,6 @@ canvas.addEventListener("mousedown", e => {
       return;
     }
   }
-
   if (!imageLoaded || polygonClosed) return;
   if (polygon.length >= 3 && Math.hypot(polygon[0].x - pos.x, polygon[0].y - pos.y) < 10) {
     polygonClosed = true;
@@ -81,60 +72,29 @@ canvas.addEventListener("mousedown", e => {
 });
 
 canvas.addEventListener("mousemove", e => {
+  if (draggingIndex < 0) return;
   const pos = getMousePos(e);
-  if (draggingIndex >= 0 && generatorQuad) {
-    generatorQuad[draggingIndex] = pos;
-    draw();
-  } else if (draggingGenerator && generatorQuad) {
-    const dx = e.movementX;
-    const dy = e.movementY;
-    generatorQuad.forEach(p => {
-      p.x += dx;
-      p.y += dy;
-    });
-    draw();
-  }
+  generatorQuad[draggingIndex] = pos;
+  draw();
 });
 
-canvas.addEventListener("mouseup", () => {
-  draggingIndex = -1;
-  draggingGenerator = false;
-  canvas.style.cursor = "default";
-});
-
-canvas.addEventListener("contextmenu", e => {
-  e.preventDefault(); // verhindert Kontextmenü
-});
+canvas.addEventListener("mouseup", () => draggingIndex = -1);
 
 canvas.addEventListener("click", e => {
   const pos = getMousePos(e);
-  const [q0, q1, q2, q3] = generatorQuad || [];
-  if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
+  if (!generatorQuad) return;
 
   const cols = fixedModuleCols;
   const rows = fixedModuleRows;
-  const sStep = 1 / cols;
-  const tStep = 1 / rows;
+  if (cols === 0 || rows === 0) return;
 
   for (let r = 0; r < rows; r++) {
-    const t0 = r * tStep;
-    const t1 = (r + 1) * tStep;
-    const left0 = lerp(q0, q3, t0);
-    const right0 = lerp(q1, q2, t0);
-    const left1 = lerp(q0, q3, t1);
-    const right1 = lerp(q1, q2, t1);
-
     for (let c = 0; c < cols; c++) {
-      const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
-
-      const a = lerp(left0, right0, s0);
-      const b = lerp(left0, right0, s1);
-      const c1 = lerp(left1, right1, s1);
-      const d = lerp(left1, right1, s0);
-
-      if (pointInQuad(pos, [a, b, c1, d])) {
-        moduleStates[r][c] = !moduleStates[r][c];
+      const quad = getModuleQuad(r, c, rows, cols);
+      if (pointInQuad(pos, quad)) {
+        const key = `${r},${c}`;
+        if (disabledModules.has(key)) disabledModules.delete(key);
+        else disabledModules.add(key);
         draw();
         return;
       }
@@ -142,21 +102,41 @@ canvas.addEventListener("click", e => {
   }
 });
 
+function getTileSize() {
+  switch (tileType.value) {
+    case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
+    case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
+    default: return null;
+  }
+}
+
+function computeMeasurements() {
+  const tile = getTileSize();
+  const t = parseInt(tilesTraufeInput.value);
+  const o = parseInt(tilesOrtgangInput.value);
+  if (!tile || !t || !o || !polygonClosed) {
+    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
+    return;
+  }
+  const traufe = tile.traufe * t;
+  const ortgang = tile.ortgang * o;
+  const area = traufe * ortgang;
+  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
+}
+
+function lerp(p1, p2, t) {
+  return { x: p1.x + (p2.x - p1.x) * t, y: p1.y + (p2.y - p1.y) * t };
+}
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function getMousePos(evt) {
   const rect = canvas.getBoundingClientRect();
   return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
-}
-
-function pointInQuad(p, quad) {
-  let inside = false;
-  for (let i = 0, j = 3; i < 4; j = i++) {
-    const xi = quad[i].x, yi = quad[i].y;
-    const xj = quad[j].x, yj = quad[j].y;
-    const intersect = ((yi > p.y) !== (yj > p.y)) &&
-      (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
-    if (intersect) inside = !inside;
-  }
-  return inside;
 }
 
 function draw() {
@@ -184,66 +164,28 @@ function draw() {
   }
 
   if (generatorQuad) {
+    const alpha = parseFloat(frameOpacityInput.value);
+
     ctx.save();
-    ctx.globalAlpha = parseFloat(frameOpacityInput.value);
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = "#00ff00";
+    ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
     for (let i = 1; i < 4; i++) ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
     ctx.closePath();
-    ctx.strokeStyle = "#00ff00";
-    ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.restore();
 
-ctx.save();
-ctx.globalAlpha = parseFloat(frameOpacityInput.value);
-generatorQuad.forEach(p => {
-  ctx.beginPath();
-  ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
-  ctx.fillStyle = "white";
-  ctx.fill();
-});
-ctx.restore();
-
+    generatorQuad.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
+      ctx.fillStyle = "white";
+      ctx.fill();
     });
+    ctx.restore();
 
     drawModules();
   }
-}
-
-function getTileSize() {
-  switch (tileType.value) {
-    case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
-    default: return null;
-  }
-}
-
-function computeMeasurements() {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value);
-  const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o || !polygonClosed) {
-    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
-    return;
-  }
-  const traufe = tile.traufe * t;
-  const ortgang = tile.ortgang * o;
-  const area = traufe * ortgang;
-  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
-}
-
-function lerp(p1, p2, t) {
-  return {
-    x: p1.x + (p2.x - p1.x) * t,
-    y: p1.y + (p2.y - p1.y) * t
-  };
-}
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
 }
 
 drawGeneratorBtn.addEventListener("click", () => {
@@ -272,20 +214,18 @@ drawGeneratorBtn.addEventListener("click", () => {
   const usableH = ortgangM - 2 * MARGIN;
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
-
-  moduleStates = Array.from({ length: fixedModuleRows }, () =>
-    Array(fixedModuleCols).fill(true)
-  );
-
+  disabledModules.clear();
   computeMeasurements();
   draw();
 });
 
 clearGeneratorBtn.addEventListener("click", () => {
   generatorQuad = null;
+  polygon = [];
+  polygonClosed = false;
+  disabledModules.clear();
   fixedModuleCols = 0;
   fixedModuleRows = 0;
-  moduleStates = [];
   draw();
 });
 
@@ -295,45 +235,62 @@ tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
 frameOpacityInput.addEventListener("input", draw);
 
-function drawModules() {
-  if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
-
+function getModuleQuad(r, c, rows, cols) {
   const [q0, q1, q2, q3] = generatorQuad;
+  const tStep = 1 / rows;
+  const sStep = 1 / cols;
+
+  const t0 = r * tStep;
+  const t1 = (r + 1) * tStep;
+  const s0 = c * sStep;
+  const s1 = (c + 1) * sStep;
+
+  const left0 = lerp(q0, q3, t0);
+  const right0 = lerp(q1, q2, t0);
+  const left1 = lerp(q0, q3, t1);
+  const right1 = lerp(q1, q2, t1);
+
+  return [
+    lerp(left0, right0, s0),
+    lerp(left0, right0, s1),
+    lerp(left1, right1, s1),
+    lerp(left1, right1, s0)
+  ];
+}
+
+function pointInQuad(pt, quad) {
+  const [a, b, c, d] = quad;
+  function sign(p1, p2, p3) {
+    return (p1.x - p3.x) * (p2.y - p3.y) - (p2.x - p3.x) * (p1.y - p3.y);
+  }
+  const b1 = sign(pt, a, b) < 0.0;
+  const b2 = sign(pt, b, c) < 0.0;
+  const b3 = sign(pt, c, d) < 0.0;
+  const b4 = sign(pt, d, a) < 0.0;
+  return ((b1 === b2) && (b2 === b3) && (b3 === b4));
+}
+
+function drawModules() {
+  const cols = fixedModuleCols;
+  const rows = fixedModuleRows;
+  if (!generatorQuad || cols <= 0 || rows <= 0) return;
+
   const opacity = parseFloat(moduleOpacityInput.value);
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = "white";
-
-  const cols = fixedModuleCols;
-  const rows = fixedModuleRows;
-  const sStep = 1 / cols;
-  const tStep = 1 / rows;
+  ctx.fillStyle = "black";
 
   for (let r = 0; r < rows; r++) {
-    const t0 = r * tStep;
-    const t1 = (r + 1) * tStep;
-    const left0 = lerp(q0, q3, t0);
-    const right0 = lerp(q1, q2, t0);
-    const left1 = lerp(q0, q3, t1);
-    const right1 = lerp(q1, q2, t1);
-
     for (let c = 0; c < cols; c++) {
-      if (!moduleStates[r][c]) continue;
+      const key = `${r},${c}`;
+      if (disabledModules.has(key)) continue;
 
-      const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
-      const a = lerp(left0, right0, s0);
-      const b = lerp(left0, right0, s1);
-      const c1 = lerp(left1, right1, s1);
-      const d = lerp(left1, right1, s0);
-
+      const quad = getModuleQuad(r, c, rows, cols);
       ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(c1.x, c1.y);
-      ctx.lineTo(d.x, d.y);
+      ctx.moveTo(quad[0].x, quad[0].y);
+      quad.forEach((pt, i) => i > 0 && ctx.lineTo(pt.x, pt.y));
       ctx.closePath();
-      ctx.fillStyle = "black";
       ctx.fill();
       ctx.stroke();
     }
