@@ -3,78 +3,35 @@
 <head>
   <meta charset="UTF-8" />
   <title>PV-Dach-Planer</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body {
-      font-family: sans-serif;
-      margin: 20px;
-    }
-    .controls {
-      margin-bottom: 20px;
-    }
-    .control-row {
-      margin-bottom: 10px;
-    }
-    canvas {
-      border: 1px solid #ccc;
-      display: block;
-      max-width: 100%;
-    }
+    body { font-family: sans-serif; margin: 20px; }
+    canvas { border: 1px solid #aaa; display: block; margin-top: 10px; }
+    label, select, input, button { margin: 5px; }
   </style>
 </head>
 <body>
-
-  <h1>PV-Dach-Planer</h1>
-
-  <div class="controls">
-    <div class="control-row">
-      <label>Dachbild:</label>
-      <input type="file" id="fileInput" accept="image/*" />
-    </div>
-
-    <div class="control-row">
-      <label>Dachtyp:</label>
-      <select id="roofType" disabled>
-        <option value="satteldach" selected>Satteldach</option>
-        <!-- andere Dachtypen optional später -->
-      </select>
-    </div>
-
-    <div class="control-row">
-      <label>Ziegeltyp:</label>
-      <select id="tileType">
-        <option value="einfalz">Einfalzziegel (21 × 33 cm)</option>
-        <option value="einfalzJumbo">Einfalz Jumbo (23 × 40 cm)</option>
-        <option value="doppelfalz">Doppelfalz (30 × 33 cm)</option>
-        <option value="doppelfalzJumbo">Doppelfalz Jumbo (30 × 40 cm)</option>
-      </select>
-    </div>
-
-    <div class="control-row">
-      <label>Ziegel (Traufe):</label>
-      <input type="number" id="tilesTraufe" value="30" min="1" />
-
-      <label>Ziegel (Ortgang):</label>
-      <input type="number" id="tilesOrtgang" value="15" min="1" />
-    </div>
-
-    <div class="control-row">
-      <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
-      <button id="clearGeneratorBtn">Zurücksetzen</button>
-    </div>
-
-    <div class="control-row">
-      <label>Modul-Transparenz:</label>
-      <input type="range" id="moduleOpacity" min="0" max="1" step="0.05" value="0.6" />
-    </div>
-
-    <div class="control-row">
-      <span id="info">Traufe: –, Ortgang: –, Fläche: –</span>
-    </div>
-  </div>
-
-  <canvas id="canvas" width="1000" height="600"></canvas>
-
+  <h2>PV-Dach-Planer</h2>
+  <input type="file" id="fileInput" accept="image/*" />
+  <label for="roofType">Dachtyp:</label>
+  <select id="roofType">
+    <option value="satteldach">Satteldach</option>
+    <option value="walmdach">Walmdach</option>
+    <option value="zeltdach">Zeltdach</option>
+  </select>
+  <label for="tileType">Ziegeltyp:</label>
+  <select id="tileType">
+    <option value="einfalzJumbo">Einfalz Jumbo (23 × 40 cm)</option>
+    <option value="doppelfalzJumbo">Doppelfalz Jumbo (30 × 40 cm)</option>
+  </select>
+  <label>Ziegel (Traufe): <input type="number" id="tilesTraufe" value="48" /></label>
+  <label>Ziegel (Ortgang): <input type="number" id="tilesOrtgang" value="15" /></label>
+  <br />
+  <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
+  <button id="clearGeneratorBtn">Zurücksetzen</button>
+  <br />
+  <label>Modul-Transparenz: <input type="range" id="moduleOpacity" min="0" max="1" step="0.01" value="0.75" /></label>
+  <p id="info"></p>
+  <canvas id="canvas"></canvas>
   <script src="script.js"></script>
 </body>
 </html>
