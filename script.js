@@ -1,5 +1,6 @@
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
+
 const fileInput = document.getElementById("fileInput");
 const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
@@ -7,6 +8,7 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
+const frameOpacityInput = document.getElementById("frameOpacity");
 const info = document.getElementById("info");
 
 const image = new Image();
@@ -16,6 +18,8 @@ let polygon = [];
 let polygonClosed = false;
 let generatorQuad = null;
 let draggingIndex = -1;
+let draggingGenerator = false;
+
 let fixedModuleCols = 0;
 let fixedModuleRows = 0;
 let scaleMtoPx = 1;
@@ -23,10 +27,10 @@ let scaleMtoPx = 1;
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
-const MARGIN_FIXED = 0.3;
+const MARGIN = 0.3;
 const HANDLE_RADIUS = 6;
 
-let moduleStates = []; // Neu: Status jedes Moduls (true=aktiv, false=inaktiv)
+let moduleStates = [];
 
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
@@ -50,17 +54,10 @@ fileInput.addEventListener("change", e => {
 
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
-
-  // Neu: Modul-Klick prüfen
-  if (generatorQuad && moduleStates.length > 0) {
-    const hit = getClickedModuleIndex(pos);
-    if (hit) {
-      const [row, col] = hit;
-      const index = row * fixedModuleCols + col;
-      moduleStates[index] = !moduleStates[index]; // Toggle Modul an/aus
-      draw();
-      return;
-    }
+  if (e.button === 2 && generatorQuad) {
+    draggingGenerator = true;
+    canvas.style.cursor = "move";
+    return;
   }
 
   if (generatorQuad) {
@@ -84,17 +81,82 @@ canvas.addEventListener("mousedown", e => {
 });
 
 canvas.addEventListener("mousemove", e => {
-  if (draggingIndex < 0) return;
   const pos = getMousePos(e);
-  generatorQuad[draggingIndex] = pos;
-  draw();
+  if (draggingIndex >= 0 && generatorQuad) {
+    generatorQuad[draggingIndex] = pos;
+    draw();
+  } else if (draggingGenerator && generatorQuad) {
+    const dx = e.movementX;
+    const dy = e.movementY;
+    generatorQuad.forEach(p => {
+      p.x += dx;
+      p.y += dy;
+    });
+    draw();
+  }
 });
 
-canvas.addEventListener("mouseup", () => draggingIndex = -1);
+canvas.addEventListener("mouseup", () => {
+  draggingIndex = -1;
+  draggingGenerator = false;
+  canvas.style.cursor = "default";
+});
+
+canvas.addEventListener("contextmenu", e => {
+  e.preventDefault(); // verhindert Kontextmenü
+});
+
+canvas.addEventListener("click", e => {
+  const pos = getMousePos(e);
+  const [q0, q1, q2, q3] = generatorQuad || [];
+  if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
+
+  const cols = fixedModuleCols;
+  const rows = fixedModuleRows;
+  const sStep = 1 / cols;
+  const tStep = 1 / rows;
+
+  for (let r = 0; r < rows; r++) {
+    const t0 = r * tStep;
+    const t1 = (r + 1) * tStep;
+    const left0 = lerp(q0, q3, t0);
+    const right0 = lerp(q1, q2, t0);
+    const left1 = lerp(q0, q3, t1);
+    const right1 = lerp(q1, q2, t1);
+
+    for (let c = 0; c < cols; c++) {
+      const s0 = c * sStep;
+      const s1 = (c + 1) * sStep;
+
+      const a = lerp(left0, right0, s0);
+      const b = lerp(left0, right0, s1);
+      const c1 = lerp(left1, right1, s1);
+      const d = lerp(left1, right1, s0);
+
+      if (pointInQuad(pos, [a, b, c1, d])) {
+        moduleStates[r][c] = !moduleStates[r][c];
+        draw();
+        return;
+      }
+    }
+  }
+});
 
 function getMousePos(evt) {
   const rect = canvas.getBoundingClientRect();
   return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
+}
+
+function pointInQuad(p, quad) {
+  let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const xi = quad[i].x, yi = quad[i].y;
+    const xj = quad[j].x, yj = quad[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y)) &&
+      (p.x < (xj - xi) * (p.y - yi) / (yj - yi) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 function draw() {
@@ -122,6 +184,8 @@ function draw() {
   }
 
   if (generatorQuad) {
+    ctx.save();
+    ctx.globalAlpha = parseFloat(frameOpacityInput.value);
     ctx.beginPath();
     ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
     for (let i = 1; i < 4; i++) ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
@@ -129,8 +193,8 @@ function draw() {
     ctx.strokeStyle = "#00ff00";
     ctx.lineWidth = 2;
     ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
-    ctx.fill();
+    ctx.restore();
+
     generatorQuad.forEach(p => {
       ctx.beginPath();
       ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
@@ -146,8 +210,6 @@ function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
     case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
-    case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
-    case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.40 };
     default: return null;
   }
 }
@@ -190,41 +252,25 @@ drawGeneratorBtn.addEventListener("click", () => {
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
-
   const traufePx = distance(polygon[0], polygon[1]);
   const ortgangPx = distance(polygon[0], polygon[3]);
   scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
-  const usableW = traufeM - 2 * MARGIN_FIXED;
-  const usableH = ortgangM - 2 * MARGIN_FIXED;
+  const marginPx = MARGIN * scaleMtoPx;
+  const q0 = { x: polygon[0].x + marginPx, y: polygon[0].y + marginPx };
+  const q1 = { x: polygon[1].x - marginPx, y: polygon[1].y + marginPx };
+  const q2 = { x: polygon[2].x - marginPx, y: polygon[2].y - marginPx };
+  const q3 = { x: polygon[3].x + marginPx, y: polygon[3].y - marginPx };
+  generatorQuad = [q0, q1, q2, q3];
 
+  const usableW = traufeM - 2 * MARGIN;
+  const usableH = ortgangM - 2 * MARGIN;
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
 
-  const actualUsedW = fixedModuleCols * (MODULE_W + GAP) - GAP;
-  const actualUsedH = fixedModuleRows * (MODULE_H + GAP) - GAP;
-
-  const extraRight = (traufeM - actualUsedW - MARGIN_FIXED);
-  const extraBottom = (ortgangM - actualUsedH - MARGIN_FIXED);
-
-  const left = MARGIN_FIXED;
-  const right = MARGIN_FIXED + extraRight;
-  const top = MARGIN_FIXED;
-  const bottom = MARGIN_FIXED + extraBottom;
-
-  const lPx = left * scaleMtoPx;
-  const rPx = right * scaleMtoPx;
-  const tPx = top * scaleMtoPx;
-  const bPx = bottom * scaleMtoPx;
-
-  const q0 = { x: polygon[0].x + lPx, y: polygon[0].y + tPx };
-  const q1 = { x: polygon[1].x - rPx, y: polygon[1].y + tPx };
-  const q2 = { x: polygon[2].x - rPx, y: polygon[2].y - bPx };
-  const q3 = { x: polygon[3].x + lPx, y: polygon[3].y - bPx };
-  generatorQuad = [q0, q1, q2, q3];
-
-  // Neu: Modulstatus initialisieren
-  moduleStates = new Array(fixedModuleRows * fixedModuleCols).fill(true);
+  moduleStates = Array.from({ length: fixedModuleRows }, () =>
+    Array(fixedModuleCols).fill(true)
+  );
 
   computeMeasurements();
   draw();
@@ -242,6 +288,7 @@ tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
+frameOpacityInput.addEventListener("input", draw);
 
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
@@ -254,30 +301,26 @@ function drawModules() {
 
   const cols = fixedModuleCols;
   const rows = fixedModuleRows;
-
   const sStep = 1 / cols;
   const tStep = 1 / rows;
 
   for (let r = 0; r < rows; r++) {
     const t0 = r * tStep;
     const t1 = (r + 1) * tStep;
-
     const left0 = lerp(q0, q3, t0);
     const right0 = lerp(q1, q2, t0);
     const left1 = lerp(q0, q3, t1);
     const right1 = lerp(q1, q2, t1);
 
     for (let c = 0; c < cols; c++) {
+      if (!moduleStates[r][c]) continue;
+
       const s0 = c * sStep;
       const s1 = (c + 1) * sStep;
-
       const a = lerp(left0, right0, s0);
       const b = lerp(left0, right0, s1);
       const c1 = lerp(left1, right1, s1);
       const d = lerp(left1, right1, s0);
-
-      const index = r * cols + c;
-      const active = moduleStates[index];
 
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
@@ -285,58 +328,11 @@ function drawModules() {
       ctx.lineTo(c1.x, c1.y);
       ctx.lineTo(d.x, d.y);
       ctx.closePath();
-
-      ctx.fillStyle = active ? "black" : "gray";
+      ctx.fillStyle = "black";
       ctx.fill();
       ctx.stroke();
     }
   }
 
   ctx.restore();
-}
-
-// Neu: Welche Modul wurde geklickt?
-function getClickedModuleIndex(pos) {
-  if (!generatorQuad) return null;
-
-  const [q0, q1, q2, q3] = generatorQuad;
-
-  const cols = fixedModuleCols;
-  const rows = fixedModuleRows;
-
-  const sStep = 1 / cols;
-  const tStep = 1 / rows;
-
-  for (let r = 0; r < rows; r++) {
-    const t0 = r * tStep;
-    const t1 = (r + 1) * tStep;
-
-    const left0 = lerp(q0, q3, t0);
-    const right0 = lerp(q1, q2, t0);
-    const left1 = lerp(q0, q3, t1);
-    const right1 = lerp(q1, q2, t1);
-
-    for (let c = 0; c < cols; c++) {
-      const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
-
-      const a = lerp(left0, right0, s0);
-      const b = lerp(left0, right0, s1);
-      const c1 = lerp(left1, right1, s1);
-      const d = lerp(left1, right1, s0);
-
-      ctx.beginPath();
-      ctx.moveTo(a.x, a.y);
-      ctx.lineTo(b.x, b.y);
-      ctx.lineTo(c1.x, c1.y);
-      ctx.lineTo(d.x, d.y);
-      ctx.closePath();
-
-      if (ctx.isPointInPath(pos.x, pos.y)) {
-        return [r, c];
-      }
-    }
-  }
-
-  return null;
 }
