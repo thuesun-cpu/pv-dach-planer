@@ -11,27 +11,37 @@
 </head>
 <body>
   <h2>PV-Dach-Planer</h2>
-  <input type="file" id="fileInput" accept="image/*" />
-  <label for="roofType">Dachtyp:</label>
-  <select id="roofType">
-    <option value="satteldach">Satteldach</option>
-    <option value="walmdach">Walmdach</option>
-    <option value="zeltdach">Zeltdach</option>
-  </select>
-  <label for="tileType">Ziegeltyp:</label>
-  <select id="tileType">
-    <option value="einfalzJumbo">Einfalz Jumbo (23 × 40 cm)</option>
-    <option value="doppelfalzJumbo">Doppelfalz Jumbo (30 × 40 cm)</option>
-  </select>
-  <label>Ziegel (Traufe): <input type="number" id="tilesTraufe" value="48" /></label>
-  <label>Ziegel (Ortgang): <input type="number" id="tilesOrtgang" value="15" /></label>
-  <br />
-  <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
-  <button id="clearGeneratorBtn">Zurücksetzen</button>
-  <br />
-  <label>Modul-Transparenz: <input type="range" id="moduleOpacity" min="0" max="1" step="0.01" value="0.75" /></label>
-  <p id="info"></p>
+
+  <div>
+    <label>Dachbild: <input type="file" id="fileInput" /></label>
+    <label>Dachtyp:
+      <select id="roofType">
+        <option value="satteldach">Satteldach</option>
+        <option value="walmdach">Walmdach</option>
+        <option value="zeltdach">Zeltdach</option>
+      </select>
+    </label>
+    <label>Ziegeltyp:
+      <select id="tileType">
+        <option value="einfalz">Einfalz (21 × 33 cm)</option>
+        <option value="einfalzJumbo" selected>Einfalz Jumbo (23 × 40 cm)</option>
+        <option value="doppelfalz">Doppelfalz (30 × 33 cm)</option>
+        <option value="doppelfalzJumbo">Doppelfalz Jumbo (30 × 40 cm)</option>
+      </select>
+    </label>
+    <label>Ziegel (Traufe): <input id="tilesTraufe" type="number" value="48" /></label>
+    <label>Ziegel (Ortgang): <input id="tilesOrtgang" type="number" value="15" /></label>
+  </div>
+
+  <div>
+    <button id="drawGeneratorBtn">Generatorfläche anzeigen</button>
+    <button id="clearGeneratorBtn">Zurücksetzen</button>
+    <label>Modul-Transparenz: <input id="moduleOpacity" type="range" min="0" max="1" step="0.01" value="0.8" /></label>
+  </div>
+
+  <p id="info">Traufe: –, Ortgang: –, Fläche: –</p>
   <canvas id="canvas"></canvas>
+
   <script src="script.js"></script>
 </body>
 </html>
