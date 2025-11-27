@@ -5,9 +5,10 @@ const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
 const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
-const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
+const resetBtn = document.getElementById("resetBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
 const info = document.getElementById("info");
+const roofType = document.getElementById("roofType");
 
 const image = new Image();
 let imageLoaded = false;
@@ -33,11 +34,9 @@ fileInput.addEventListener("change", e => {
   reader.onload = function (ev) {
     image.onload = () => {
       imageLoaded = true;
-      canvas.width = image.width;
-      canvas.height = image.height;
-      polygon = [];
-      polygonClosed = false;
-      generatorQuad = null;
+      const scale = Math.min(1000 / image.width, 1);
+      canvas.width = image.width * scale;
+      canvas.height = image.height * scale;
       draw();
     };
     image.src = ev.target.result;
@@ -56,15 +55,6 @@ canvas.addEventListener("mousedown", e => {
       return;
     }
   }
-
-  if (!imageLoaded || polygonClosed) return;
-  if (polygon.length >= 3 && Math.hypot(polygon[0].x - pos.x, polygon[0].y - pos.y) < 10) {
-    polygonClosed = true;
-    computeMeasurements();
-  } else {
-    polygon.push(pos);
-  }
-  draw();
 });
 
 canvas.addEventListener("mousemove", e => {
@@ -84,26 +74,6 @@ function getMousePos(evt) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
-
-  if (polygon.length) {
-    ctx.beginPath();
-    ctx.moveTo(polygon[0].x, polygon[0].y);
-    for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
-    if (polygonClosed) {
-      ctx.closePath();
-      ctx.fillStyle = "rgba(255,0,0,0.2)";
-      ctx.fill();
-    }
-    ctx.strokeStyle = "red";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = "#00bcd4";
-    polygon.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
-      ctx.fill();
-    });
-  }
 
   if (generatorQuad) {
     ctx.beginPath();
@@ -129,7 +99,7 @@ function draw() {
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.24, ortgang: 0.40 };
+    case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
     case "doppelfalz": return { traufe: 0.30, ortgang: 0.33 };
     case "doppelfalzJumbo": return { traufe: 0.30, ortgang: 0.40 };
     default: return null;
@@ -140,7 +110,7 @@ function computeMeasurements() {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o || !polygonClosed) {
+  if (!tile || !t || !o) {
     info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
     return;
   }
@@ -150,61 +120,54 @@ function computeMeasurements() {
   info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
 }
 
-function lerp(p1, p2, t) {
-  return {
-    x: p1.x + (p2.x - p1.x) * t,
-    y: p1.y + (p2.y - p1.y) * t
-  };
-}
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
 drawGeneratorBtn.addEventListener("click", () => {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o || !polygonClosed || polygon.length < 4) {
-    alert("Bitte Dachfläche und Ziegelmaße korrekt angeben.");
+  if (!tile || !t || !o || !imageLoaded) {
+    alert("Bitte Ziegelangaben und Bild angeben.");
     return;
   }
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
 
-  const traufePx = distance(polygon[0], polygon[1]);
-  const ortgangPx = distance(polygon[0], polygon[3]);
-  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
+  const widthPx = canvas.width;
+  const heightPx = canvas.height;
+  const avgScale = (widthPx / traufeM + heightPx / ortgangM) / 2;
+  scaleMtoPx = avgScale;
 
   const marginPx = MARGIN * scaleMtoPx;
-
-  // Berechne verfügbare Fläche (rechte Seite + unten)
-  const usableW = traufeM - MARGIN;
-  const usableH = ortgangM - MARGIN;
+  const usableW = traufeM - 2 * MARGIN;
+  const usableH = ortgangM - 2 * MARGIN;
 
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
 
-  const totalW = fixedModuleCols * (MODULE_W + GAP) - GAP;
-  const totalH = fixedModuleRows * (MODULE_H + GAP) - GAP;
+  const moduleAreaW = fixedModuleCols * (MODULE_W + GAP) - GAP;
+  const moduleAreaH = fixedModuleRows * (MODULE_H + GAP) - GAP;
 
-  const totalWPx = totalW * scaleMtoPx;
-  const totalHPx = totalH * scaleMtoPx;
+  const totalModuleWpx = moduleAreaW * scaleMtoPx;
+  const totalModuleHpx = moduleAreaH * scaleMtoPx;
 
-  const q0 = { x: polygon[0].x + marginPx, y: polygon[0].y + marginPx };
-  const q1 = { x: q0.x + totalWPx, y: q0.y };
-  const q2 = { x: q0.x + totalWPx, y: q0.y + totalHPx };
-  const q3 = { x: q0.x, y: q0.y + totalHPx };
-  generatorQuad = [q0, q1, q2, q3];
+  const left = marginPx;
+  const top = marginPx;
+
+  const right = left + totalModuleWpx;
+  const bottom = top + totalModuleHpx;
+
+  generatorQuad = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom }
+  ];
 
   computeMeasurements();
   draw();
 });
 
-clearGeneratorBtn.addEventListener("click", () => {
+resetBtn.addEventListener("click", () => {
   generatorQuad = null;
   fixedModuleCols = 0;
   fixedModuleRows = 0;
@@ -215,6 +178,13 @@ tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
+
+function lerp(p1, p2, t) {
+  return {
+    x: p1.x + (p2.x - p1.x) * t,
+    y: p1.y + (p2.y - p1.y) * t
+  };
+}
 
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
