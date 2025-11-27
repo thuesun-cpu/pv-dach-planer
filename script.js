@@ -8,7 +8,6 @@ const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const resetBtn = document.getElementById("resetBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
 const info = document.getElementById("info");
-const dachTyp = document.getElementById("dachTyp");
 
 const image = new Image();
 let imageLoaded = false;
@@ -27,6 +26,7 @@ const GAP = 0.02;
 const MARGIN = 0.3;
 const HANDLE_RADIUS = 6;
 
+// --------------------- Bild laden ---------------------
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -47,6 +47,64 @@ fileInput.addEventListener("change", e => {
   reader.readAsDataURL(file);
 });
 
+// --------------------- Zeichnen ---------------------
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  drawPolygon();
+  drawGenerator();
+  drawModules();
+}
+
+function drawPolygon() {
+  if (!polygon.length) return;
+
+  ctx.beginPath();
+  ctx.moveTo(polygon[0].x, polygon[0].y);
+  for (let i = 1; i < polygon.length; i++) {
+    ctx.lineTo(polygon[i].x, polygon[i].y);
+  }
+  if (polygonClosed) {
+    ctx.closePath();
+    ctx.fillStyle = "rgba(255,0,0,0.2)";
+    ctx.fill();
+  }
+
+  ctx.strokeStyle = "red";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  ctx.fillStyle = "#00bcd4";
+  polygon.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+    ctx.fill();
+  });
+}
+
+function drawGenerator() {
+  if (!generatorQuad) return;
+
+  ctx.beginPath();
+  ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
+  for (let i = 1; i < 4; i++) ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
+  ctx.closePath();
+  ctx.strokeStyle = "#00ff00";
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  ctx.fillStyle = "rgba(255,255,255,0.2)";
+  ctx.fill();
+
+  generatorQuad.forEach(p => {
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
+    ctx.fillStyle = "white";
+    ctx.fill();
+  });
+}
+
+// --------------------- Mausinteraktion ---------------------
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
   if (generatorQuad) {
@@ -57,6 +115,14 @@ canvas.addEventListener("mousedown", e => {
       draggingIndex = idx;
       return;
     }
+  }
+
+  if (!imageLoaded || polygonClosed) return;
+  if (polygon.length >= 3 && Math.hypot(polygon[0].x - pos.x, polygon[0].y - pos.y) < 10) {
+    polygonClosed = true;
+    computeMeasurements();
+  } else {
+    polygon.push(pos);
   }
   draw();
 });
@@ -75,6 +141,21 @@ function getMousePos(evt) {
   return { x: evt.clientX - rect.left, y: evt.clientY - rect.top };
 }
 
+// --------------------- Hilfsfunktionen ---------------------
+function lerp(p1, p2, t) {
+  return {
+    x: p1.x + (p2.x - p1.x) * t,
+    y: p1.y + (p2.y - p1.y) * t
+  };
+}
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+// --------------------- Daten ---------------------
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
@@ -85,44 +166,42 @@ function getTileSize() {
   }
 }
 
-function computeMeasurements() {
+// --------------------- Generatorfläche erzeugen ---------------------
+drawGeneratorBtn.addEventListener("click", () => {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o) {
-    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
+  if (!tile || !t || !o || !polygonClosed || polygon.length < 4) {
+    alert("Bitte zuerst Dachfläche schließen und Ziegeldaten korrekt eingeben.");
     return;
   }
-  const traufe = tile.traufe * t;
-  const ortgang = tile.ortgang * o;
-  const area = traufe * ortgang;
-  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
-}
 
-function draw() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const traufeM = tile.traufe * t;
+  const ortgangM = tile.ortgang * o;
 
-  if (generatorQuad) {
-    ctx.beginPath();
-    ctx.moveTo(generatorQuad[0].x, generatorQuad[0].y);
-    for (let i = 1; i < 4; i++) ctx.lineTo(generatorQuad[i].x, generatorQuad[i].y);
-    ctx.closePath();
-    ctx.strokeStyle = "#00ff00";
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    ctx.fillStyle = "rgba(255,255,255,0.2)";
-    ctx.fill();
-    generatorQuad.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = "white";
-      ctx.fill();
-    });
-    drawModules();
-  }
-}
+  const traufePx = distance(polygon[0], polygon[1]);
+  const ortgangPx = distance(polygon[0], polygon[3]);
 
+  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
+  const marginPx = MARGIN * scaleMtoPx;
+
+  const q0 = { x: polygon[0].x + marginPx, y: polygon[0].y + marginPx };
+  const q1 = { x: polygon[1].x - marginPx, y: polygon[1].y + marginPx };
+  const q2 = { x: polygon[2].x - marginPx, y: polygon[2].y - marginPx };
+  const q3 = { x: polygon[3].x + marginPx, y: polygon[3].y - marginPx };
+
+  generatorQuad = [q0, q1, q2, q3];
+
+  const usableW = traufeM - 2 * MARGIN;
+  const usableH = ortgangM - 2 * MARGIN;
+  fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
+  fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
+
+  computeMeasurements();
+  draw();
+});
+
+// --------------------- Modulraster ---------------------
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
   const [q0, q1, q2, q3] = generatorQuad;
@@ -148,7 +227,7 @@ function drawModules() {
 
     for (let c = 0; c < cols; c++) {
       const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
+      const s1 = c + 1 * sStep;
 
       const a = lerp(left0, right0, s0);
       const b = lerp(left0, right0, s1);
@@ -169,60 +248,13 @@ function drawModules() {
   ctx.restore();
 }
 
-function lerp(p1, p2, t) {
-  return {
-    x: p1.x + (p2.x - p1.x) * t,
-    y: p1.y + (p2.y - p1.y) * t
-  };
-}
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
-drawGeneratorBtn.addEventListener("click", () => {
-  const tile = getTileSize();
-  const t = parseInt(tilesTraufeInput.value);
-  const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o) {
-    alert("Bitte Ziegelmaße eingeben");
-    return;
-  }
-
-  const traufeM = tile.traufe * t;
-  const ortgangM = tile.ortgang * o;
-
-  const pxTraufe = canvas.width * 0.8;
-  const pxOrtgang = pxTraufe * (ortgangM / traufeM);
-  scaleMtoPx = pxTraufe / traufeM;
-
-  const marginPx = MARGIN * scaleMtoPx;
-
-  const x = canvas.width * 0.1;
-  const y = canvas.height * 0.4;
-
-  const q0 = { x: x + marginPx, y: y + marginPx };
-  const q1 = { x: x + pxTraufe - marginPx, y: y + marginPx };
-  const q2 = { x: x + pxTraufe - marginPx, y: y + pxOrtgang - marginPx };
-  const q3 = { x: x + marginPx, y: y + pxOrtgang - marginPx };
-
-  generatorQuad = [q0, q1, q2, q3];
-
-  const usableW = traufeM - 2 * MARGIN;
-  const usableH = ortgangM - 2 * MARGIN;
-  fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
-  fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
-
-  computeMeasurements();
-  draw();
-});
-
+// --------------------- Reset & Reaktion ---------------------
 resetBtn.addEventListener("click", () => {
   generatorQuad = null;
   fixedModuleCols = 0;
   fixedModuleRows = 0;
+  polygon = [];
+  polygonClosed = false;
   draw();
 });
 
@@ -230,3 +262,17 @@ tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
+
+function computeMeasurements() {
+  const tile = getTileSize();
+  const t = parseInt(tilesTraufeInput.value);
+  const o = parseInt(tilesOrtgangInput.value);
+  if (!tile || !t || !o) {
+    info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
+    return;
+  }
+  const traufe = tile.traufe * t;
+  const ortgang = tile.ortgang * o;
+  const area = traufe * ortgang;
+  info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
+}
