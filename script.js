@@ -185,11 +185,27 @@ drawGeneratorBtn.addEventListener("click", () => {
   const width = traufeM * scaleMtoPx;
   const height = ortgangM * scaleMtoPx;
 
-  const q0 = { x: marginPx, y: marginPx };
-  const q1 = { x: marginPx + width, y: marginPx };
-  const q2 = { x: marginPx + width, y: marginPx + height };
-  const q3 = { x: marginPx, y: marginPx + height };
-  generatorQuad = [q0, q1, q2, q3];
+const shrinkFactor = 0.9;
+const centerX = marginPx + width / 2;
+const centerY = marginPx + height / 2;
+
+const q0 = {
+  x: centerX - (width / 2) * shrinkFactor,
+  y: centerY - (height / 2) * shrinkFactor
+};
+const q1 = {
+  x: centerX + (width / 2) * shrinkFactor,
+  y: centerY - (height / 2) * shrinkFactor
+};
+const q2 = {
+  x: centerX + (width / 2) * shrinkFactor,
+  y: centerY + (height / 2) * shrinkFactor
+};
+const q3 = {
+  x: centerX - (width / 2) * shrinkFactor,
+  y: centerY + (height / 2) * shrinkFactor
+};
+
 
   // Modulanzahl fix berechnen auf Basis verfügbarer Fläche (abzgl. 30 cm links/oben)
   const usableW = traufeM - MARGIN;
