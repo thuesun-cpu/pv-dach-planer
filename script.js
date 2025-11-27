@@ -7,7 +7,6 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
-const roofTypeSelect = document.getElementById("roofType");
 const info = document.getElementById("info");
 
 const image = new Image();
@@ -24,8 +23,10 @@ let scaleMtoPx = 1;
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
-const MARGIN_FIXED = 0.3; // Fester Abstand in Meter (30cm)
+const MARGIN_FIXED = 0.3;
 const HANDLE_RADIUS = 6;
+
+let moduleStates = []; // Neu: Status jedes Moduls (true=aktiv, false=inaktiv)
 
 fileInput.addEventListener("change", e => {
   const file = e.target.files[0];
@@ -49,6 +50,19 @@ fileInput.addEventListener("change", e => {
 
 canvas.addEventListener("mousedown", e => {
   const pos = getMousePos(e);
+
+  // Neu: Modul-Klick prüfen
+  if (generatorQuad && moduleStates.length > 0) {
+    const hit = getClickedModuleIndex(pos);
+    if (hit) {
+      const [row, col] = hit;
+      const index = row * fixedModuleCols + col;
+      moduleStates[index] = !moduleStates[index]; // Toggle Modul an/aus
+      draw();
+      return;
+    }
+  }
+
   if (generatorQuad) {
     const idx = generatorQuad.findIndex(p =>
       Math.hypot(p.x - pos.x, p.y - pos.y) < HANDLE_RADIUS + 3
@@ -152,17 +166,17 @@ function computeMeasurements() {
   info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
 }
 
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
-}
-
 function lerp(p1, p2, t) {
   return {
     x: p1.x + (p2.x - p1.x) * t,
     y: p1.y + (p2.y - p1.y) * t
   };
+}
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 drawGeneratorBtn.addEventListener("click", () => {
@@ -181,7 +195,6 @@ drawGeneratorBtn.addEventListener("click", () => {
   const ortgangPx = distance(polygon[0], polygon[3]);
   scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
-  // Fläche berechnen (unter Berücksichtigung linker/oberer fixer Rand)
   const usableW = traufeM - 2 * MARGIN_FIXED;
   const usableH = ortgangM - 2 * MARGIN_FIXED;
 
@@ -210,6 +223,9 @@ drawGeneratorBtn.addEventListener("click", () => {
   const q3 = { x: polygon[3].x + lPx, y: polygon[3].y - bPx };
   generatorQuad = [q0, q1, q2, q3];
 
+  // Neu: Modulstatus initialisieren
+  moduleStates = new Array(fixedModuleRows * fixedModuleCols).fill(true);
+
   computeMeasurements();
   draw();
 });
@@ -218,6 +234,7 @@ clearGeneratorBtn.addEventListener("click", () => {
   generatorQuad = null;
   fixedModuleCols = 0;
   fixedModuleRows = 0;
+  moduleStates = [];
   draw();
 });
 
@@ -234,7 +251,55 @@ function drawModules() {
   ctx.save();
   ctx.globalAlpha = opacity;
   ctx.strokeStyle = "white";
-  ctx.fillStyle = "black";
+
+  const cols = fixedModuleCols;
+  const rows = fixedModuleRows;
+
+  const sStep = 1 / cols;
+  const tStep = 1 / rows;
+
+  for (let r = 0; r < rows; r++) {
+    const t0 = r * tStep;
+    const t1 = (r + 1) * tStep;
+
+    const left0 = lerp(q0, q3, t0);
+    const right0 = lerp(q1, q2, t0);
+    const left1 = lerp(q0, q3, t1);
+    const right1 = lerp(q1, q2, t1);
+
+    for (let c = 0; c < cols; c++) {
+      const s0 = c * sStep;
+      const s1 = (c + 1) * sStep;
+
+      const a = lerp(left0, right0, s0);
+      const b = lerp(left0, right0, s1);
+      const c1 = lerp(left1, right1, s1);
+      const d = lerp(left1, right1, s0);
+
+      const index = r * cols + c;
+      const active = moduleStates[index];
+
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c1.x, c1.y);
+      ctx.lineTo(d.x, d.y);
+      ctx.closePath();
+
+      ctx.fillStyle = active ? "black" : "gray";
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+
+  ctx.restore();
+}
+
+// Neu: Welche Modul wurde geklickt?
+function getClickedModuleIndex(pos) {
+  if (!generatorQuad) return null;
+
+  const [q0, q1, q2, q3] = generatorQuad;
 
   const cols = fixedModuleCols;
   const rows = fixedModuleRows;
@@ -266,10 +331,12 @@ function drawModules() {
       ctx.lineTo(c1.x, c1.y);
       ctx.lineTo(d.x, d.y);
       ctx.closePath();
-      ctx.fill();
-      ctx.stroke();
+
+      if (ctx.isPointInPath(pos.x, pos.y)) {
+        return [r, c];
+      }
     }
   }
 
-  ctx.restore();
+  return null;
 }
