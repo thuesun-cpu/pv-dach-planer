@@ -195,11 +195,16 @@ function draw() {
     ctx.stroke();
     ctx.restore();
 
-    generatorQuad.forEach(p => {
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
-      ctx.fillStyle = "white";
-      ctx.fill();
+ctx.save();
+ctx.globalAlpha = parseFloat(frameOpacityInput.value);
+generatorQuad.forEach(p => {
+  ctx.beginPath();
+  ctx.arc(p.x, p.y, HANDLE_RADIUS, 0, 2 * Math.PI);
+  ctx.fillStyle = "white";
+  ctx.fill();
+});
+ctx.restore();
+
     });
 
     drawModules();
