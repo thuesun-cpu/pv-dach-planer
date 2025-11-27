@@ -105,7 +105,7 @@ canvas.addEventListener("click", e => {
 function getTileSize() {
   switch (tileType.value) {
     case "einfalz": return { traufe: 0.21, ortgang: 0.33 };
-    case "einfalzJumbo": return { traufe: 0.23, ortgang: 0.40 };
+    case "einfalzJumbo": return { traufe: 0.2315, ortgang: 0.40 };
     default: return null;
   }
 }
