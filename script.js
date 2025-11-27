@@ -7,7 +7,6 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
-const roofTypeSelect = document.getElementById("roofType");
 const info = document.getElementById("info");
 
 const image = new Image();
@@ -169,7 +168,7 @@ drawGeneratorBtn.addEventListener("click", () => {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o || !polygonClosed || polygon.length < 4) {
+  if (!tile || !t || !o || !polygonClosed) {
     alert("Bitte Dachfläche und Ziegelmaße korrekt angeben.");
     return;
   }
@@ -177,27 +176,24 @@ drawGeneratorBtn.addEventListener("click", () => {
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
 
-  const traufePx = distance(polygon[0], polygon[1]);
-  const ortgangPx = distance(polygon[0], polygon[3]);
-  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
+  const scaleX = canvas.width / traufeM;
+  const scaleY = canvas.height / ortgangM;
+  scaleMtoPx = (scaleX + scaleY) / 2;
 
-  const widthPx = traufeM * scaleMtoPx;
-  const heightPx = ortgangM * scaleMtoPx;
+  const marginPx = MARGIN * scaleMtoPx;
 
-  const margin = MARGIN * scaleMtoPx;
+  const width = traufeM * scaleMtoPx;
+  const height = ortgangM * scaleMtoPx;
 
-  const x0 = polygon[0].x;
-  const y0 = polygon[0].y - heightPx; // First oben
+  const q0 = { x: marginPx, y: marginPx };
+  const q1 = { x: marginPx + width, y: marginPx };
+  const q2 = { x: marginPx + width, y: marginPx + height };
+  const q3 = { x: marginPx, y: marginPx + height };
+  generatorQuad = [q0, q1, q2, q3];
 
-  generatorQuad = [
-    { x: x0 + margin, y: y0 + margin },
-    { x: x0 + widthPx - margin, y: y0 + margin },
-    { x: x0 + widthPx - margin, y: y0 + heightPx - margin },
-    { x: x0 + margin, y: y0 + heightPx - margin }
-  ];
-
-  const usableW = traufeM - 2 * MARGIN;
-  const usableH = ortgangM - 2 * MARGIN;
+  // Modulanzahl fix berechnen auf Basis verfügbarer Fläche (abzgl. 30 cm links/oben)
+  const usableW = traufeM - MARGIN;
+  const usableH = ortgangM - MARGIN;
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
 
@@ -220,26 +216,7 @@ moduleOpacityInput.addEventListener("input", draw);
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
 
-  const marginPx = MARGIN * scaleMtoPx;
-
-  const shrinkEdge = (a, b) => {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const len = Math.sqrt(dx * dx + dy * dy);
-    const mx = (dx / len) * marginPx;
-    const my = (dy / len) * marginPx;
-    return [
-      { x: a.x + mx, y: a.y + my },
-      { x: b.x - mx, y: b.y - my }
-    ];
-  };
-
-  const [q0, q1] = shrinkEdge(generatorQuad[0], generatorQuad[1]);
-  const [q2, q3] = shrinkEdge(generatorQuad[2], generatorQuad[3]);
-
-  const innerQuad = [q0, q1, q2, q3];
-
-  const [p0, p1, p2, p3] = innerQuad;
+  const [q0, q1, q2, q3] = generatorQuad;
   const opacity = parseFloat(moduleOpacityInput.value);
   ctx.save();
   ctx.globalAlpha = opacity;
@@ -252,23 +229,27 @@ function drawModules() {
   const sStep = 1 / cols;
   const tStep = 1 / rows;
 
-  for (let r = 0; r < rows; r++) {
-    const t0 = r * tStep;
-    const t1 = (r + 1) * tStep;
+  // 30 cm Abstand auf linker + oberer Seite
+  const s0 = MARGIN / (fixedModuleCols * (MODULE_W + GAP));
+  const t0 = MARGIN / (fixedModuleRows * (MODULE_H + GAP));
 
-    const left0 = lerp(p0, p3, t0);
-    const right0 = lerp(p1, p2, t0);
-    const left1 = lerp(p0, p3, t1);
-    const right1 = lerp(p1, p2, t1);
+  for (let r = 0; r < rows; r++) {
+    const tStart = t0 + r * tStep;
+    const tEnd = t0 + (r + 1) * tStep;
+
+    const leftStart = lerp(q0, q3, tStart);
+    const rightStart = lerp(q1, q2, tStart);
+    const leftEnd = lerp(q0, q3, tEnd);
+    const rightEnd = lerp(q1, q2, tEnd);
 
     for (let c = 0; c < cols; c++) {
-      const s0 = c * sStep;
-      const s1 = (c + 1) * sStep;
+      const sStart = s0 + c * sStep;
+      const sEnd = s0 + (c + 1) * sStep;
 
-      const a = lerp(left0, right0, s0);
-      const b = lerp(left0, right0, s1);
-      const c1 = lerp(left1, right1, s1);
-      const d = lerp(left1, right1, s0);
+      const a = lerp(leftStart, rightStart, sStart);
+      const b = lerp(leftStart, rightStart, sEnd);
+      const c1 = lerp(leftEnd, rightEnd, sEnd);
+      const d = lerp(leftEnd, rightEnd, sStart);
 
       ctx.beginPath();
       ctx.moveTo(a.x, a.y);
