@@ -7,6 +7,7 @@ const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
 const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
+const roofTypeSelect = document.getElementById("roofType");
 const info = document.getElementById("info");
 
 const image = new Image();
@@ -23,7 +24,7 @@ let scaleMtoPx = 1;
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
-const MARGIN_FIXED = 0.3; // immer 30 cm links + oben
+const MARGIN_FIXED = 0.3; // Fester Abstand in Meter (30cm)
 const HANDLE_RADIUS = 6;
 
 fileInput.addEventListener("change", e => {
@@ -151,17 +152,17 @@ function computeMeasurements() {
   info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
 }
 
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 function lerp(p1, p2, t) {
   return {
     x: p1.x + (p2.x - p1.x) * t,
     y: p1.y + (p2.y - p1.y) * t
   };
-}
-
-function distance(a, b) {
-  const dx = a.x - b.x;
-  const dy = a.y - b.y;
-  return Math.sqrt(dx * dx + dy * dy);
 }
 
 drawGeneratorBtn.addEventListener("click", () => {
@@ -175,29 +176,38 @@ drawGeneratorBtn.addEventListener("click", () => {
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
+
   const traufePx = distance(polygon[0], polygon[1]);
   const ortgangPx = distance(polygon[0], polygon[3]);
   scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
+  // Fläche berechnen (unter Berücksichtigung linker/oberer fixer Rand)
   const usableW = traufeM - 2 * MARGIN_FIXED;
   const usableH = ortgangM - 2 * MARGIN_FIXED;
 
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
 
-  const usedW = fixedModuleCols * (MODULE_W + GAP) - GAP;
-  const usedH = fixedModuleRows * (MODULE_H + GAP) - GAP;
+  const actualUsedW = fixedModuleCols * (MODULE_W + GAP) - GAP;
+  const actualUsedH = fixedModuleRows * (MODULE_H + GAP) - GAP;
 
-  const usedWpx = usedW * scaleMtoPx;
-  const usedHpx = usedH * scaleMtoPx;
+  const extraRight = (traufeM - actualUsedW - MARGIN_FIXED);
+  const extraBottom = (ortgangM - actualUsedH - MARGIN_FIXED);
 
-  const q0 = {
-    x: polygon[0].x + MARGIN_FIXED * scaleMtoPx,
-    y: polygon[0].y + MARGIN_FIXED * scaleMtoPx
-  };
-  const q1 = { x: q0.x + usedWpx, y: q0.y };
-  const q2 = { x: q0.x + usedWpx, y: q0.y + usedHpx };
-  const q3 = { x: q0.x, y: q0.y + usedHpx };
+  const left = MARGIN_FIXED;
+  const right = MARGIN_FIXED + extraRight;
+  const top = MARGIN_FIXED;
+  const bottom = MARGIN_FIXED + extraBottom;
+
+  const lPx = left * scaleMtoPx;
+  const rPx = right * scaleMtoPx;
+  const tPx = top * scaleMtoPx;
+  const bPx = bottom * scaleMtoPx;
+
+  const q0 = { x: polygon[0].x + lPx, y: polygon[0].y + tPx };
+  const q1 = { x: polygon[1].x - rPx, y: polygon[1].y + tPx };
+  const q2 = { x: polygon[2].x - rPx, y: polygon[2].y - bPx };
+  const q3 = { x: polygon[3].x + lPx, y: polygon[3].y - bPx };
   generatorQuad = [q0, q1, q2, q3];
 
   computeMeasurements();
