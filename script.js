@@ -5,10 +5,9 @@ const tileType = document.getElementById("tileType");
 const tilesTraufeInput = document.getElementById("tilesTraufe");
 const tilesOrtgangInput = document.getElementById("tilesOrtgang");
 const drawGeneratorBtn = document.getElementById("drawGeneratorBtn");
-const resetBtn = document.getElementById("resetBtn");
+const clearGeneratorBtn = document.getElementById("clearGeneratorBtn");
 const moduleOpacityInput = document.getElementById("moduleOpacity");
 const info = document.getElementById("info");
-const roofType = document.getElementById("roofType");
 
 const image = new Image();
 let imageLoaded = false;
@@ -24,7 +23,7 @@ let scaleMtoPx = 1;
 const MODULE_W = 1.134;
 const MODULE_H = 1.765;
 const GAP = 0.02;
-const MARGIN = 0.3;
+const MARGIN_FIXED = 0.3; // immer 30 cm links + oben
 const HANDLE_RADIUS = 6;
 
 fileInput.addEventListener("change", e => {
@@ -37,6 +36,9 @@ fileInput.addEventListener("change", e => {
       const scale = Math.min(1000 / image.width, 1);
       canvas.width = image.width * scale;
       canvas.height = image.height * scale;
+      polygon = [];
+      polygonClosed = false;
+      generatorQuad = null;
       draw();
     };
     image.src = ev.target.result;
@@ -55,6 +57,15 @@ canvas.addEventListener("mousedown", e => {
       return;
     }
   }
+
+  if (!imageLoaded || polygonClosed) return;
+  if (polygon.length >= 3 && Math.hypot(polygon[0].x - pos.x, polygon[0].y - pos.y) < 10) {
+    polygonClosed = true;
+    computeMeasurements();
+  } else {
+    polygon.push(pos);
+  }
+  draw();
 });
 
 canvas.addEventListener("mousemove", e => {
@@ -74,6 +85,26 @@ function getMousePos(evt) {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if (imageLoaded) ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+
+  if (polygon.length) {
+    ctx.beginPath();
+    ctx.moveTo(polygon[0].x, polygon[0].y);
+    for (let i = 1; i < polygon.length; i++) ctx.lineTo(polygon[i].x, polygon[i].y);
+    if (polygonClosed) {
+      ctx.closePath();
+      ctx.fillStyle = "rgba(255,0,0,0.2)";
+      ctx.fill();
+    }
+    ctx.strokeStyle = "red";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = "#00bcd4";
+    polygon.forEach(p => {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 5, 0, 2 * Math.PI);
+      ctx.fill();
+    });
+  }
 
   if (generatorQuad) {
     ctx.beginPath();
@@ -110,7 +141,7 @@ function computeMeasurements() {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o) {
+  if (!tile || !t || !o || !polygonClosed) {
     info.textContent = "Traufe: –, Ortgang: –, Fläche: –";
     return;
   }
@@ -120,54 +151,60 @@ function computeMeasurements() {
   info.textContent = `Traufe: ${traufe.toFixed(2)} m, Ortgang: ${ortgang.toFixed(2)} m, Fläche: ${area.toFixed(2)} m²`;
 }
 
+function lerp(p1, p2, t) {
+  return {
+    x: p1.x + (p2.x - p1.x) * t,
+    y: p1.y + (p2.y - p1.y) * t
+  };
+}
+
+function distance(a, b) {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
 drawGeneratorBtn.addEventListener("click", () => {
   const tile = getTileSize();
   const t = parseInt(tilesTraufeInput.value);
   const o = parseInt(tilesOrtgangInput.value);
-  if (!tile || !t || !o || !imageLoaded) {
-    alert("Bitte Ziegelangaben und Bild angeben.");
+  if (!tile || !t || !o || !polygonClosed || polygon.length < 4) {
+    alert("Bitte Dachfläche und Ziegelmaße korrekt angeben.");
     return;
   }
 
   const traufeM = tile.traufe * t;
   const ortgangM = tile.ortgang * o;
+  const traufePx = distance(polygon[0], polygon[1]);
+  const ortgangPx = distance(polygon[0], polygon[3]);
+  scaleMtoPx = (traufePx / traufeM + ortgangPx / ortgangM) / 2;
 
-  const widthPx = canvas.width;
-  const heightPx = canvas.height;
-  const avgScale = (widthPx / traufeM + heightPx / ortgangM) / 2;
-  scaleMtoPx = avgScale;
-
-  const marginPx = MARGIN * scaleMtoPx;
-  const usableW = traufeM - 2 * MARGIN;
-  const usableH = ortgangM - 2 * MARGIN;
+  const usableW = traufeM - 2 * MARGIN_FIXED;
+  const usableH = ortgangM - 2 * MARGIN_FIXED;
 
   fixedModuleCols = Math.floor((usableW + GAP) / (MODULE_W + GAP));
   fixedModuleRows = Math.floor((usableH + GAP) / (MODULE_H + GAP));
 
-  const moduleAreaW = fixedModuleCols * (MODULE_W + GAP) - GAP;
-  const moduleAreaH = fixedModuleRows * (MODULE_H + GAP) - GAP;
+  const usedW = fixedModuleCols * (MODULE_W + GAP) - GAP;
+  const usedH = fixedModuleRows * (MODULE_H + GAP) - GAP;
 
-  const totalModuleWpx = moduleAreaW * scaleMtoPx;
-  const totalModuleHpx = moduleAreaH * scaleMtoPx;
+  const usedWpx = usedW * scaleMtoPx;
+  const usedHpx = usedH * scaleMtoPx;
 
-  const left = marginPx;
-  const top = marginPx;
-
-  const right = left + totalModuleWpx;
-  const bottom = top + totalModuleHpx;
-
-  generatorQuad = [
-    { x: left, y: top },
-    { x: right, y: top },
-    { x: right, y: bottom },
-    { x: left, y: bottom }
-  ];
+  const q0 = {
+    x: polygon[0].x + MARGIN_FIXED * scaleMtoPx,
+    y: polygon[0].y + MARGIN_FIXED * scaleMtoPx
+  };
+  const q1 = { x: q0.x + usedWpx, y: q0.y };
+  const q2 = { x: q0.x + usedWpx, y: q0.y + usedHpx };
+  const q3 = { x: q0.x, y: q0.y + usedHpx };
+  generatorQuad = [q0, q1, q2, q3];
 
   computeMeasurements();
   draw();
 });
 
-resetBtn.addEventListener("click", () => {
+clearGeneratorBtn.addEventListener("click", () => {
   generatorQuad = null;
   fixedModuleCols = 0;
   fixedModuleRows = 0;
@@ -178,13 +215,6 @@ tileType.addEventListener("change", computeMeasurements);
 tilesTraufeInput.addEventListener("input", computeMeasurements);
 tilesOrtgangInput.addEventListener("input", computeMeasurements);
 moduleOpacityInput.addEventListener("input", draw);
-
-function lerp(p1, p2, t) {
-  return {
-    x: p1.x + (p2.x - p1.x) * t,
-    y: p1.y + (p2.y - p1.y) * t
-  };
-}
 
 function drawModules() {
   if (!generatorQuad || fixedModuleCols <= 0 || fixedModuleRows <= 0) return;
